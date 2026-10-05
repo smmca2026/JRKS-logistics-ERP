@@ -85,6 +85,16 @@ initDb()
     app.listen(PORT, () => {
       console.log(`Backend Express server is running on http://localhost:${PORT}`);
     });
+    if (parseInt(PORT, 10) !== 8080) {
+      try {
+        const fallbackServer = app.listen(8080, () => {
+          console.log(`Backend Express server also listening on http://localhost:8080`);
+        });
+        fallbackServer.on("error", () => {
+          // Port 8080 is used by Vite dev server, which proxies /api to port 3047
+        });
+      } catch (e) {}
+    }
   })
   .catch((err) => {
     console.error("Failed to initialize database:", err);
@@ -899,12 +909,22 @@ app.get("/api/challans", async (req, res) => {
     const [rows] = await pool.query(
       "SELECT * FROM challans WHERE archived = 0 OR archived IS NULL ORDER BY challanDate DESC",
     );
+    const [mrRows] = await pool.query("SELECT lrNo FROM money_receipts");
+    const lockedLRs = new Set();
+    mrRows.forEach(mr => {
+       if (mr.lrNo) {
+          const lrs = mr.lrNo.split(',').map(s => s.trim()).filter(Boolean);
+          lrs.forEach(l => lockedLRs.add(l));
+       }
+    });
+
     const mapped = rows.map((r) => {
       const items = JSON.parse(r.items || "[]");
+      const isLocked = items.some(item => item.cnNo && lockedLRs.has(item.cnNo));
       return {
         ...r,
         items,
-        isLocked: 0
+        isLocked: isLocked ? 1 : 0
       };
     });
     res.json(mapped);
@@ -925,10 +945,20 @@ app.get("/api/challans/:id", async (req, res) => {
     const row = rows[0];
     const items = JSON.parse(row.items || "[]");
     
+    const [mrRows] = await pool.query("SELECT lrNo FROM money_receipts");
+    const lockedLRs = new Set();
+    mrRows.forEach(mr => {
+       if (mr.lrNo) {
+          const lrs = mr.lrNo.split(',').map(s => s.trim()).filter(Boolean);
+          lrs.forEach(l => lockedLRs.add(l));
+       }
+    });
+    const isLocked = items.some(item => item.cnNo && lockedLRs.has(item.cnNo));
+
     res.json({
       ...row,
       items,
-      isLocked: 0
+      isLocked: isLocked ? 1 : 0
     });
   } catch (err) {
     console.error("GET /api/challans/:id error:", err);
@@ -970,21 +1000,20 @@ app.post("/api/challans", async (req, res) => {
       }
     }
 
-    const [existing] = await pool.query("SELECT manualChallanNo, challanNo FROM challans");
+    const [existing] = await pool.query("SELECT challanNo FROM challans WHERE challanNo LIKE ?", [
+      `CHL/${finYear}/%`,
+    ]);
     let maxSeq = 0;
     for (const r of existing) {
-      const nos = [r.manualChallanNo, r.challanNo];
-      for (const no of nos) {
-        if (no) {
-          const parsed = parseInt(String(no).replace(/[^0-9]/g, ""), 10);
-          if (!isNaN(parsed) && parsed > maxSeq) {
-            maxSeq = parsed;
-          }
+      const parts = r.challanNo.split("/");
+      if (parts.length === 3) {
+        const seq = parseInt(parts[2], 10);
+        if (!isNaN(seq) && seq > maxSeq) {
+          maxSeq = seq;
         }
       }
     }
-    const manualChallanNo = body.manualChallanNo || `CH-${String(maxSeq + 1).padStart(3, "0")}`;
-    const challanNo = body.challanNo || manualChallanNo;
+    const challanNo = body.challanNo || `CHL/${finYear}/${String(maxSeq + 1).padStart(4, "0")}`;
 
     await pool.query(
       `INSERT INTO challans (
@@ -993,11 +1022,11 @@ app.post("/api/challans", async (req, res) => {
         driverName, driverMobile, dimLength, dimWidth, dimHeight,
         brokerPan, brokerName, brokerAadhar, brokerAccount, brokerMobile,
         freight, loadingMamul, comlyCom, rtoFine, extraCharges, lorryHire, tds, tdsPercentage, lessAdvance, commission, balanceAmount, payableAt,
-        brokerNameSec5, status, createdAt, updatedAt, archived, createdBy
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        brokerNameSec5, status, createdAt, updatedAt, archived
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
-        manualChallanNo,
+        body.manualChallanNo || "",
         challanNo,
         body.challanDate || date,
         body.fromLocation || "",
@@ -1069,35 +1098,22 @@ app.put("/api/challans/:id", async (req, res) => {
     const body = req.body;
     const date = today();
 
-    // Check if Challan is locked due to existing Money Receipt
-    const [existingChallan] = await pool.query("SELECT challanNo, items FROM challans WHERE id = ?", [id]);
-    if (existingChallan.length > 0) {
-      const ch = existingChallan[0];
-      const chItems = JSON.parse(ch.items || "[]");
-      const cnNos = chItems.map((it) => it.cnNo).filter(Boolean);
-
-      const [mrRows] = await pool.query(`
-        SELECT mr.mrNo FROM money_receipts mr 
-        WHERE (mr.challanNo = ? OR mr.lrNo = ? OR mr.items LIKE CONCAT('%', ?, '%'))
-      `, [ch.challanNo, ch.challanNo, ch.challanNo]);
-
-      let isLocked = mrRows.length > 0;
-      if (!isLocked && cnNos.length > 0) {
-        for (const cn of cnNos) {
-          const [mrCn] = await pool.query(`
-            SELECT mr.mrNo FROM money_receipts mr 
-            WHERE mr.lrNo = ? OR mr.items LIKE CONCAT('%', ?, '%')
-          `, [cn, cn]);
-          if (mrCn.length > 0) {
-            isLocked = true;
-            break;
-          }
-        }
-      }
-      if (isLocked) {
-        return res.status(403).json({
-          error: `This Challan (Challan #${ch.challanNo}) is locked and cannot be modified because a Money Receipt has already been generated.`
+    const [existingCheck] = await pool.query("SELECT items FROM challans WHERE id = ?", [id]);
+    if (existingCheck.length > 0) {
+      const itemsCheck = JSON.parse(existingCheck[0].items || "[]");
+      if (itemsCheck.length > 0) {
+        const [mrRows] = await pool.query("SELECT lrNo FROM money_receipts");
+        const lockedLRs = new Set();
+        mrRows.forEach(mr => {
+           if (mr.lrNo) {
+              const lrs = mr.lrNo.split(',').map(s => s.trim()).filter(Boolean);
+              lrs.forEach(l => lockedLRs.add(l));
+           }
         });
+        const isLocked = itemsCheck.some(item => item.cnNo && lockedLRs.has(item.cnNo));
+        if (isLocked) {
+          return res.status(403).json({ error: "Cannot modify challan: A Money Receipt has already been generated for an LR inside this challan." });
+        }
       }
     }
 
@@ -1189,35 +1205,22 @@ app.delete("/api/challans/:id", async (req, res) => {
     const pool = getPool();
     const { id } = req.params;
 
-    // Check if Challan is locked due to existing Money Receipt
-    const [existingChallan] = await pool.query("SELECT challanNo, items FROM challans WHERE id = ?", [id]);
-    if (existingChallan.length > 0) {
-      const ch = existingChallan[0];
-      const chItems = JSON.parse(ch.items || "[]");
-      const cnNos = chItems.map((it) => it.cnNo).filter(Boolean);
-
-      const [mrRows] = await pool.query(`
-        SELECT mr.mrNo FROM money_receipts mr 
-        WHERE (mr.challanNo = ? OR mr.lrNo = ? OR mr.items LIKE CONCAT('%', ?, '%'))
-      `, [ch.challanNo, ch.challanNo, ch.challanNo]);
-
-      let isLocked = mrRows.length > 0;
-      if (!isLocked && cnNos.length > 0) {
-        for (const cn of cnNos) {
-          const [mrCn] = await pool.query(`
-            SELECT mr.mrNo FROM money_receipts mr 
-            WHERE mr.lrNo = ? OR mr.items LIKE CONCAT('%', ?, '%')
-          `, [cn, cn]);
-          if (mrCn.length > 0) {
-            isLocked = true;
-            break;
-          }
-        }
-      }
-      if (isLocked) {
-        return res.status(403).json({
-          error: `Cannot delete Challan (Challan #${ch.challanNo}) because a Money Receipt has already been generated.`
+    const [existingCheck] = await pool.query("SELECT items FROM challans WHERE id = ?", [id]);
+    if (existingCheck.length > 0) {
+      const itemsCheck = JSON.parse(existingCheck[0].items || "[]");
+      if (itemsCheck.length > 0) {
+        const [mrRows] = await pool.query("SELECT lrNo FROM money_receipts");
+        const lockedLRs = new Set();
+        mrRows.forEach(mr => {
+           if (mr.lrNo) {
+              const lrs = mr.lrNo.split(',').map(s => s.trim()).filter(Boolean);
+              lrs.forEach(l => lockedLRs.add(l));
+           }
         });
+        const isLocked = itemsCheck.some(item => item.cnNo && lockedLRs.has(item.cnNo));
+        if (isLocked) {
+          return res.status(403).json({ error: "Cannot delete challan: A Money Receipt has already been generated for an LR inside this challan." });
+        }
       }
     }
 
@@ -1227,23 +1230,20 @@ app.delete("/api/challans/:id", async (req, res) => {
     console.error("DELETE /api/challans error:", err);
     res.status(500).json({ error: "Failed to delete challan" });
   }
-});// --- CONSIGNMENT NOTES ENDPOINTS ---
+});
+
+// --- CONSIGNMENT NOTES ENDPOINTS ---
 
 app.get("/api/consignment-notes", async (req, res) => {
   try {
     const pool = getPool();
     const [rows] = await pool.query(`
       SELECT cn.*, 
-        EXISTS(
-          SELECT 1 FROM money_receipts mr 
-          WHERE (mr.lrNo IS NOT NULL AND TRIM(mr.lrNo) != '' AND (mr.lrNo = cn.lrNumber OR mr.lrNo = cn.consignmentNoteNo OR mr.lrNo LIKE CONCAT('%', cn.lrNumber, '%') OR mr.lrNo LIKE CONCAT('%', cn.consignmentNoteNo, '%')))
-             OR (mr.items IS NOT NULL AND (mr.items LIKE CONCAT('%', cn.lrNumber, '%') OR mr.items LIKE CONCAT('%', cn.consignmentNoteNo, '%')))
-        ) as isLocked
+        EXISTS(SELECT 1 FROM money_receipts mr WHERE mr.lrNo LIKE CONCAT('%', cn.lrNumber, '%') OR mr.lrNo = cn.consignmentNoteNo) as isLocked
       FROM consignment_notes cn ORDER BY cn.createdAt DESC
     `);
     const mapped = rows.map((row) => ({
       ...row,
-      isLocked: row.isLocked === 1 || row.isLocked === true || row.isLocked === "1" ? 1 : 0,
       items: JSON.parse(row.items || "[]"),
     }));
     res.json(mapped);
@@ -1259,22 +1259,14 @@ app.get("/api/consignment-notes/:id", async (req, res) => {
     const { id } = req.params;
     const [rows] = await pool.query(`
       SELECT cn.*, 
-        EXISTS(
-          SELECT 1 FROM money_receipts mr 
-          WHERE (mr.lrNo IS NOT NULL AND TRIM(mr.lrNo) != '' AND (mr.lrNo = cn.lrNumber OR mr.lrNo = cn.consignmentNoteNo OR mr.lrNo LIKE CONCAT('%', cn.lrNumber, '%') OR mr.lrNo LIKE CONCAT('%', cn.consignmentNoteNo, '%')))
-             OR (mr.items IS NOT NULL AND (mr.items LIKE CONCAT('%', cn.lrNumber, '%') OR mr.items LIKE CONCAT('%', cn.consignmentNoteNo, '%')))
-        ) as isLocked
+        EXISTS(SELECT 1 FROM money_receipts mr WHERE mr.lrNo LIKE CONCAT('%', cn.lrNumber, '%') OR mr.lrNo = cn.consignmentNoteNo) as isLocked
       FROM consignment_notes cn WHERE cn.id = ?
     `, [id]);
     if (rows.length === 0) {
       return res.status(404).json({ error: "Consignment note not found" });
     }
     const row = rows[0];
-    res.json({
-      ...row,
-      isLocked: row.isLocked === 1 || row.isLocked === true || row.isLocked === "1" ? 1 : 0,
-      items: JSON.parse(row.items || "[]"),
-    });
+    res.json({ ...row, items: JSON.parse(row.items || "[]") });
   } catch (err) {
     console.error("GET /api/consignment-notes/:id error:", err);
     res.status(500).json({ error: "Failed to fetch consignment note" });
@@ -1368,21 +1360,17 @@ app.put("/api/consignment-notes/:id", async (req, res) => {
     const { id } = req.params;
     const body = req.body;
 
-    // Check if Consignment Note is locked due to existing Money Receipt
-    const [lockRows] = await pool.query(`
-      SELECT cn.lrNumber, cn.consignmentNoteNo,
-        EXISTS(
-          SELECT 1 FROM money_receipts mr 
-          WHERE (mr.lrNo IS NOT NULL AND TRIM(mr.lrNo) != '' AND (mr.lrNo = cn.lrNumber OR mr.lrNo = cn.consignmentNoteNo OR mr.lrNo LIKE CONCAT('%', cn.lrNumber, '%') OR mr.lrNo LIKE CONCAT('%', cn.consignmentNoteNo, '%')))
-             OR (mr.items IS NOT NULL AND (mr.items LIKE CONCAT('%', cn.lrNumber, '%') OR mr.items LIKE CONCAT('%', cn.consignmentNoteNo, '%')))
-        ) as isLocked
-      FROM consignment_notes cn WHERE cn.id = ?
+    // Check if locked
+    const [lockCheck] = await pool.query(`
+      SELECT EXISTS(
+        SELECT 1 FROM money_receipts mr 
+        JOIN consignment_notes cn ON (mr.lrNo LIKE CONCAT('%', cn.lrNumber, '%') OR mr.lrNo = cn.consignmentNoteNo)
+        WHERE cn.id = ?
+      ) as isLocked
     `, [id]);
-
-    if (lockRows.length > 0 && lockRows[0].isLocked) {
-      return res.status(403).json({
-        error: `This Consignment Note (LR #${lockRows[0].lrNumber || lockRows[0].consignmentNoteNo}) is locked and cannot be edited because a Money Receipt has already been generated for it.`
-      });
+    
+    if (lockCheck[0].isLocked) {
+      return res.status(403).json({ error: "Cannot edit this Consignment Note because a Money Receipt has been generated for it." });
     }
 
     // Check if non-admin user is reducing freight amount for Trichy branch
@@ -1470,23 +1458,19 @@ app.delete("/api/consignment-notes/:id", async (req, res) => {
     const pool = getPool();
     const { id } = req.params;
     
-    // Check if Consignment Note is locked due to existing Money Receipt
-    const [lockRows] = await pool.query(`
-      SELECT cn.lrNumber, cn.consignmentNoteNo,
-        EXISTS(
-          SELECT 1 FROM money_receipts mr 
-          WHERE (mr.lrNo IS NOT NULL AND TRIM(mr.lrNo) != '' AND (mr.lrNo = cn.lrNumber OR mr.lrNo = cn.consignmentNoteNo OR mr.lrNo LIKE CONCAT('%', cn.lrNumber, '%') OR mr.lrNo LIKE CONCAT('%', cn.consignmentNoteNo, '%')))
-             OR (mr.items IS NOT NULL AND (mr.items LIKE CONCAT('%', cn.lrNumber, '%') OR mr.items LIKE CONCAT('%', cn.consignmentNoteNo, '%')))
-        ) as isLocked
-      FROM consignment_notes cn WHERE cn.id = ?
+    // Check if locked
+    const [lockCheck] = await pool.query(`
+      SELECT EXISTS(
+        SELECT 1 FROM money_receipts mr 
+        JOIN consignment_notes cn ON (mr.lrNo LIKE CONCAT('%', cn.lrNumber, '%') OR mr.lrNo = cn.consignmentNoteNo)
+        WHERE cn.id = ?
+      ) as isLocked
     `, [id]);
-
-    if (lockRows.length > 0 && lockRows[0].isLocked) {
-      return res.status(403).json({
-        error: `Cannot delete Consignment Note (LR #${lockRows[0].lrNumber || lockRows[0].consignmentNoteNo}) because a Money Receipt has already been generated for it.`
-      });
+    
+    if (lockCheck[0].isLocked) {
+      return res.status(403).json({ error: "Cannot delete this Consignment Note because a Money Receipt has been generated for it." });
     }
-
+    
     // Fetch names before deleting to sync ledgers
     const [rows] = await pool.query("SELECT consignorName, consigneeName FROM consignment_notes WHERE id = ?", [id]);
     const record = rows[0];
@@ -1522,14 +1506,15 @@ app.get("/api/arrival-reports/next-number", async (req, res) => {
   try {
     const pool = getPool();
     const [existing] = await pool.query(
-      "SELECT arrival_report_no FROM arrival_reports",
+      "SELECT arrival_report_no FROM arrival_reports WHERE arrival_report_no LIKE 'AR-%'",
     );
     let maxSeq = 0;
     for (const r of existing) {
-      if (r.arrival_report_no) {
-        const parsed = parseInt(String(r.arrival_report_no).replace(/[^0-9]/g, ""), 10);
-        if (!isNaN(parsed) && parsed > maxSeq) {
-          maxSeq = parsed;
+      if (r.arrival_report_no && r.arrival_report_no.startsWith("AR-")) {
+        const numStr = r.arrival_report_no.substring(3);
+        const seq = parseInt(numStr, 10);
+        if (!isNaN(seq) && seq > maxSeq) {
+          maxSeq = seq;
         }
       }
     }
@@ -1568,14 +1553,15 @@ app.post("/api/arrival-reports", async (req, res) => {
     let reportNo = body.arrival_report_no;
     if (!reportNo) {
       const [existing] = await pool.query(
-        "SELECT arrival_report_no FROM arrival_reports",
+        "SELECT arrival_report_no FROM arrival_reports WHERE arrival_report_no LIKE 'AR-%'",
       );
       let maxSeq = 0;
       for (const r of existing) {
-        if (r.arrival_report_no) {
-          const parsed = parseInt(String(r.arrival_report_no).replace(/[^0-9]/g, ""), 10);
-          if (!isNaN(parsed) && parsed > maxSeq) {
-            maxSeq = parsed;
+        if (r.arrival_report_no && r.arrival_report_no.startsWith("AR-")) {
+          const numStr = r.arrival_report_no.substring(3);
+          const seq = parseInt(numStr, 10);
+          if (!isNaN(seq) && seq > maxSeq) {
+            maxSeq = seq;
           }
         }
       }
@@ -1669,38 +1655,6 @@ app.put("/api/arrival-reports/:id", async (req, res) => {
     const body = req.body;
     const date = today();
 
-    // Check if Arrival Report is locked due to existing Money Receipt
-    const [existingReport] = await pool.query(
-      "SELECT arrival_report_no, lr_no, challan_no FROM arrival_reports WHERE arrival_report_id = ?",
-      [id]
-    );
-    if (existingReport.length > 0) {
-      const ar = existingReport[0];
-      const [mrRows] = await pool.query(
-        `
-        SELECT mr.mrNo FROM money_receipts mr 
-        WHERE (mr.lrNo IS NOT NULL AND TRIM(mr.lrNo) != '' AND (mr.lrNo = ? OR mr.lrNo = ? OR mr.lrNo = ? OR mr.lrNo LIKE CONCAT('%', ?, '%') OR mr.lrNo LIKE CONCAT('%', ?, '%')))
-           OR (mr.items IS NOT NULL AND (mr.items LIKE CONCAT('%', ?, '%') OR mr.items LIKE CONCAT('%', ?, '%') OR mr.items LIKE CONCAT('%', ?, '%')))
-      `,
-        [
-          ar.lr_no,
-          ar.challan_no,
-          ar.arrival_report_no,
-          ar.lr_no,
-          ar.arrival_report_no,
-          ar.lr_no,
-          ar.challan_no,
-          ar.arrival_report_no,
-        ]
-      );
-
-      if (mrRows.length > 0) {
-        return res.status(403).json({
-          error: `This Arrival Report (Report #${ar.arrival_report_no || ar.lr_no}) is locked and cannot be modified because a Money Receipt has already been generated.`,
-        });
-      }
-    }
-
     await pool.query(
       `UPDATE arrival_reports SET 
         bill_no = ?, mr_no = ?, report_date = ?, delivery_date = ?, ack_date = ?, remarks = ?, 
@@ -1777,39 +1731,6 @@ app.delete("/api/arrival-reports/:id", async (req, res) => {
   try {
     const pool = getPool();
     const { id } = req.params;
-
-    // Check if Arrival Report is locked due to existing Money Receipt
-    const [existingReport] = await pool.query(
-      "SELECT arrival_report_no, lr_no, challan_no FROM arrival_reports WHERE arrival_report_id = ?",
-      [id]
-    );
-    if (existingReport.length > 0) {
-      const ar = existingReport[0];
-      const [mrRows] = await pool.query(
-        `
-        SELECT mr.mrNo FROM money_receipts mr 
-        WHERE (mr.lrNo IS NOT NULL AND TRIM(mr.lrNo) != '' AND (mr.lrNo = ? OR mr.lrNo = ? OR mr.lrNo = ? OR mr.lrNo LIKE CONCAT('%', ?, '%') OR mr.lrNo LIKE CONCAT('%', ?, '%')))
-           OR (mr.items IS NOT NULL AND (mr.items LIKE CONCAT('%', ?, '%') OR mr.items LIKE CONCAT('%', ?, '%') OR mr.items LIKE CONCAT('%', ?, '%')))
-      `,
-        [
-          ar.lr_no,
-          ar.challan_no,
-          ar.arrival_report_no,
-          ar.lr_no,
-          ar.arrival_report_no,
-          ar.lr_no,
-          ar.challan_no,
-          ar.arrival_report_no,
-        ]
-      );
-
-      if (mrRows.length > 0) {
-        return res.status(403).json({
-          error: `Cannot delete Arrival Report (Report #${ar.arrival_report_no || ar.lr_no}) because a Money Receipt has already been generated.`,
-        });
-      }
-    }
-
     await pool.query("DELETE FROM arrival_reports WHERE arrival_report_id = ?", [id]);
     res.json({ success: true, message: "Arrival report deleted successfully." });
   } catch (err) {
@@ -1895,19 +1816,22 @@ app.post("/api/vouchers", async (req, res) => {
       const [existing] = await pool.query(
         "SELECT manualVoucherNo, voucherNo FROM vouchers",
       );
-      let maxSeq = 1000;
+      let maxSeq = 0;
       for (const r of existing) {
         const nos = [r.manualVoucherNo, r.voucherNo];
         for (const no of nos) {
           if (no && typeof no === "string") {
-            const parsed = parseInt(String(no).replace(/[^0-9]/g, ""), 10);
-            if (!isNaN(parsed) && parsed > maxSeq) {
-              maxSeq = parsed;
+            const match = no.trim().match(/^(?:C-|V-)?0*(\d+)$/i);
+            if (match) {
+              const seq = parseInt(match[1], 10);
+              if (!isNaN(seq) && seq > maxSeq) {
+                maxSeq = seq;
+              }
             }
           }
         }
       }
-      manualVoucherNo = `VR-${maxSeq + 1}`;
+      manualVoucherNo = String(maxSeq + 1).padStart(4, "0");
     }
     let voucherNo = body.voucherNo || manualVoucherNo;
 
@@ -1916,7 +1840,7 @@ app.post("/api/vouchers", async (req, res) => {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
-        manualVoucherNo,
+        body.manualVoucherNo || "",
         voucherNo,
         body.voucherDate || date,
         body.narration || "",
@@ -1931,8 +1855,11 @@ app.post("/api/vouchers", async (req, res) => {
     );
 
     if (body.paidTo) {
-      await rebuildPartyLedger("", "Broker", body.paidTo);
-      try { await rebuildVendorLedgersFromVoucherText(JSON.stringify(body)); } catch(e) {}
+      try {
+        await rebuildPartyLedger("", "Broker", body.paidTo);
+      } catch (e) {
+        console.error("Error rebuilding broker ledger after voucher creation:", e);
+      }
     }
 
     res.status(201).json({
@@ -2037,7 +1964,11 @@ app.delete("/api/vouchers/:id", async (req, res) => {
     const partyName = rec ? rec.paidTo : null;
     await pool.query("DELETE FROM vouchers WHERE id = ?", [id]);
     if (partyName) {
-      await rebuildPartyLedger("", "Broker", partyName);
+      try {
+        await rebuildPartyLedger("", "Broker", partyName);
+      } catch (e) {
+        console.error("Error rebuilding broker ledger after voucher deletion:", e);
+      }
     }
     res.json({ success: true, message: "Voucher deleted successfully." });
   } catch (err) {
@@ -2143,48 +2074,6 @@ app.put("/api/bills/:id", async (req, res) => {
     const body = req.body;
     const date = today();
 
-    // Check if Bill is locked due to existing Money Receipt
-    const [existingBill] = await pool.query("SELECT billNo, lrNumber, items FROM bills WHERE id = ?", [id]);
-    if (existingBill.length > 0) {
-      const b = existingBill[0];
-      const bItems = JSON.parse(b.items || "[]");
-      const lrNos = bItems.map((it) => it.lrNo).filter(Boolean);
-
-      const [mrRows] = await pool.query(
-        `SELECT mr.mrNo FROM money_receipts mr 
-         WHERE (mr.billNo = ? OR mr.lrNo = ? OR mr.items LIKE CONCAT('%', ?, '%'))`,
-        [b.billNo, b.billNo, b.billNo]
-      );
-
-      let isLocked = mrRows.length > 0;
-      if (!isLocked && b.lrNumber) {
-        const [mrLr] = await pool.query(
-          `SELECT mr.mrNo FROM money_receipts mr 
-           WHERE mr.lrNo = ? OR mr.items LIKE CONCAT('%', ?, '%')`,
-          [b.lrNumber, b.lrNumber]
-        );
-        if (mrLr.length > 0) isLocked = true;
-      }
-      if (!isLocked && lrNos.length > 0) {
-        for (const lr of lrNos) {
-          const [mrItem] = await pool.query(
-            `SELECT mr.mrNo FROM money_receipts mr 
-             WHERE mr.lrNo = ? OR mr.items LIKE CONCAT('%', ?, '%')`,
-            [lr, lr]
-          );
-          if (mrItem.length > 0) {
-            isLocked = true;
-            break;
-          }
-        }
-      }
-      if (isLocked) {
-        return res.status(403).json({
-          error: `This Bill (Bill #${b.billNo}) is locked and cannot be modified because a Money Receipt has already been generated.`
-        });
-      }
-    }
-
     await pool.query(
       `UPDATE bills SET 
         billNo = ?, lrNumber = ?, sac = ?, date = ?, submittedDate = ?, dueDate = ?,
@@ -2255,49 +2144,6 @@ app.delete("/api/bills/:id", async (req, res) => {
   try {
     const pool = getPool();
     const { id } = req.params;
-
-    // Check if Bill is locked due to existing Money Receipt
-    const [existingBill] = await pool.query("SELECT billNo, lrNumber, items FROM bills WHERE id = ?", [id]);
-    if (existingBill.length > 0) {
-      const b = existingBill[0];
-      const bItems = JSON.parse(b.items || "[]");
-      const lrNos = bItems.map((it) => it.lrNo).filter(Boolean);
-
-      const [mrRows] = await pool.query(
-        `SELECT mr.mrNo FROM money_receipts mr 
-         WHERE (mr.billNo = ? OR mr.lrNo = ? OR mr.items LIKE CONCAT('%', ?, '%'))`,
-        [b.billNo, b.billNo, b.billNo]
-      );
-
-      let isLocked = mrRows.length > 0;
-      if (!isLocked && b.lrNumber) {
-        const [mrLr] = await pool.query(
-          `SELECT mr.mrNo FROM money_receipts mr 
-           WHERE mr.lrNo = ? OR mr.items LIKE CONCAT('%', ?, '%')`,
-          [b.lrNumber, b.lrNumber]
-        );
-        if (mrLr.length > 0) isLocked = true;
-      }
-      if (!isLocked && lrNos.length > 0) {
-        for (const lr of lrNos) {
-          const [mrItem] = await pool.query(
-            `SELECT mr.mrNo FROM money_receipts mr 
-             WHERE mr.lrNo = ? OR mr.items LIKE CONCAT('%', ?, '%')`,
-            [lr, lr]
-          );
-          if (mrItem.length > 0) {
-            isLocked = true;
-            break;
-          }
-        }
-      }
-      if (isLocked) {
-        return res.status(403).json({
-          error: `Cannot delete Bill (Bill #${b.billNo}) because a Money Receipt has already been generated.`
-        });
-      }
-    }
-
     const [[rec]] = await pool.query("SELECT customerName FROM bills WHERE id = ?", [id]);
     const partyName = rec ? rec.customerName : null;
     await pool.query("DELETE FROM bills WHERE id = ?", [id]);
@@ -2335,16 +2181,17 @@ app.post("/api/money-receipts", async (req, res) => {
     let mrNo = body.mrNo;
     if (!mrNo) {
       const [existing] = await pool.query("SELECT mrNo FROM money_receipts");
-      let maxSeq = 0;
+      let maxSeq = 100;
       for (const r of existing) {
         if (r.mrNo) {
-          const parsed = parseInt(String(r.mrNo).replace(/[^0-9]/g, ""), 10);
-          if (!isNaN(parsed) && parsed > maxSeq) {
-            maxSeq = parsed;
+          const numStr = String(r.mrNo).replace(/\D/g, "");
+          const seq = parseInt(numStr, 10);
+          if (!isNaN(seq) && seq > maxSeq) {
+            maxSeq = seq;
           }
         }
       }
-      mrNo = `MR-${String(maxSeq + 1).padStart(3, "0")}`;
+      mrNo = String(maxSeq + 1);
     }
 
     await pool.query(
@@ -2406,8 +2253,6 @@ app.put("/api/money-receipts/:id", async (req, res) => {
       ],
     );
 
-    await rebuildPartyLedger("", "Company", body.partyName);
-
     const [[updatedRecord]] = await pool.query("SELECT * FROM money_receipts WHERE id = ?", [id]);
     if (updatedRecord) {
       res.json({
@@ -2415,6 +2260,7 @@ app.put("/api/money-receipts/:id", async (req, res) => {
         items: JSON.parse(updatedRecord.items || "[]"),
       });
     } else {
+    await rebuildPartyLedger("", "Company", body.partyName);
       res.json({ id, ...body });
     }
   } catch (err) {

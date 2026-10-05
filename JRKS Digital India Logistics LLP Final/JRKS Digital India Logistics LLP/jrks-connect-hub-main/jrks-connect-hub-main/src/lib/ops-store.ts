@@ -1190,28 +1190,39 @@ export const useOpsStore = create<OpsState>((set, get) => ({
   },
 
   nextVoucherNo: () => {
-    let maxSeq = 1000;
+    let maxSeq = 0;
     get().vouchers.forEach((v) => {
-      const nos = [v.manualVoucherNo, v.voucherNo];
-      for (const no of nos) {
-        if (no && typeof no === "string") {
-          const parsed = parseInt(String(no).replace(/[^0-9]/g, ""), 10);
-          if (!isNaN(parsed) && parsed > maxSeq) {
-            maxSeq = parsed;
+      const val = v.manualVoucherNo || (v.voucherNo && /^(?:VR-|VCH-)/i.test(v.voucherNo) ? v.voucherNo : "");
+      if (val && typeof val === "string") {
+        const match = val.trim().match(/^(?:VR-?|VCH-?|C-|V-)?0*(\d+)$/i);
+        if (match) {
+          let seq = parseInt(match[1], 10);
+          if (seq >= 1000) seq = seq - 1000;
+          if (!isNaN(seq) && seq > maxSeq) {
+            maxSeq = seq;
           }
         }
       }
     });
-    return `VR-${maxSeq + 1}`;
+    return `VR-${String(maxSeq + 1).padStart(3, "0")}`;
   },
 
   nextArrivalReportNo: () => {
     let maxSeq = 0;
     get().arrivalReports.forEach((ar) => {
-      if (ar.arrival_report_no) {
-        const parsed = parseInt(String(ar.arrival_report_no).replace(/[^0-9]/g, ""), 10);
-        if (!isNaN(parsed) && parsed > maxSeq) {
-          maxSeq = parsed;
+      const nos = [ar.arrival_report_no, (ar as any).arrivalReportNo, (ar as any).report_no];
+      for (const no of nos) {
+        if (no && typeof no === "string") {
+          const match = no.trim().match(/^(?:AR-?)?0*(\d+)$/i);
+          if (match) {
+            let seq = parseInt(match[1], 10);
+            if (seq >= 1000) {
+              seq = seq - 1000;
+            }
+            if (!isNaN(seq) && seq > maxSeq) {
+              maxSeq = seq;
+            }
+          }
         }
       }
     });
@@ -1221,10 +1232,14 @@ export const useOpsStore = create<OpsState>((set, get) => ({
   nextMoneyReceiptNo: () => {
     let maxSeq = 0;
     get().moneyReceipts.forEach((mr) => {
-      if (mr.mrNo) {
-        const parsed = parseInt(String(mr.mrNo).replace(/[^0-9]/g, ""), 10);
-        if (!isNaN(parsed) && parsed > maxSeq) {
-          maxSeq = parsed;
+      if (mr.mrNo && typeof mr.mrNo === "string") {
+        const match = mr.mrNo.trim().match(/^(?:MR-?)?0*(\d+)$/i);
+        if (match) {
+          let seq = parseInt(match[1], 10);
+          if (seq >= 1000) seq = seq - 1000;
+          if (!isNaN(seq) && seq > maxSeq) {
+            maxSeq = seq;
+          }
         }
       }
     });
@@ -1236,10 +1251,14 @@ export const useOpsStore = create<OpsState>((set, get) => ({
     get().challans.forEach((c) => {
       const nos = [c.manualChallanNo, c.challanNo];
       for (const no of nos) {
-        if (no) {
-          const parsed = parseInt(String(no).replace(/[^0-9]/g, ""), 10);
-          if (!isNaN(parsed) && parsed > maxSeq) {
-            maxSeq = parsed;
+        if (no && typeof no === "string") {
+          const match = no.trim().match(/^(?:CH-?)?0*(\d+)$/i);
+          if (match) {
+            let seq = parseInt(match[1], 10);
+            if (seq >= 1000) seq = seq - 1000;
+            if (!isNaN(seq) && seq > maxSeq) {
+              maxSeq = seq;
+            }
           }
         }
       }
@@ -1436,17 +1455,19 @@ export const useOpsStore = create<OpsState>((set, get) => ({
   },
 
   nextBillNo: () => {
-    let maxSeq = 0;
+    let maxSeq = 26000;
     get().bills.forEach((b) => {
-      if (b.billNo && b.billNo.startsWith("INV-")) {
-        const numStr = b.billNo.substring(4);
-        const seq = parseInt(numStr, 10);
-        if (!isNaN(seq) && seq > maxSeq) {
-          maxSeq = seq;
+      if (b.billNo && typeof b.billNo === "string") {
+        const match = b.billNo.trim().match(/^(?:INV-?)?0*(\d+)$/i);
+        if (match) {
+          const seq = parseInt(match[1], 10);
+          if (!isNaN(seq) && seq >= 26000 && seq > maxSeq) {
+            maxSeq = seq;
+          }
         }
       }
     });
-    return `INV-${String(maxSeq + 1).padStart(3, "0")}`;
+    return `INV-${maxSeq + 1}`;
   },
 
   loadOutstandingSummaries: async () => {

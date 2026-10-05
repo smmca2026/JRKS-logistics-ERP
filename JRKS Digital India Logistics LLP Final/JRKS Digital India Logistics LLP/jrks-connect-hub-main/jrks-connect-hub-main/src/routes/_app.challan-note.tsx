@@ -264,7 +264,8 @@ function getNextManualChallanNo(
     const nos = [c.manualChallanNo, c.challanNo];
     for (const no of nos) {
       if (no) {
-        const parsed = parseInt(String(no).replace(/[^0-9]/g, ""), 10);
+        let parsed = parseInt(String(no).replace(/[^0-9]/g, ""), 10);
+        if (parsed >= 1000) parsed = parsed - 1000;
         if (!isNaN(parsed) && parsed > maxSeq) {
           maxSeq = parsed;
         }
@@ -374,7 +375,13 @@ function ChallanNotePage() {
 
   // Lookup options
   const vehicleOptions = useMemo(() => trucks.map((t) => t.vehicleNumber), [trucks]);
-  const brokerOptions = useMemo(() => brokers.map((b) => b.brokerName), [brokers]);
+  const brokerOptions = useMemo(() => {
+    const names = brokers.map((b) => b.brokerName).filter(Boolean);
+    if (!names.includes("DIRECT")) {
+      names.unshift("DIRECT");
+    }
+    return names;
+  }, [brokers]);
   const ownerOptions = useMemo(() => {
     const names = trucks.map((t) => t.ownerName).filter(Boolean);
     return Array.from(new Set(names));
@@ -434,14 +441,17 @@ function ChallanNotePage() {
     const cleanLessAdvance = isNaN(numLessAdvance) || numLessAdvance < 0 ? 0 : numLessAdvance;
     const cleanComlyCom = isNaN(numComlyCom) || numComlyCom < 0 ? 0 : numComlyCom;
 
-    const grossAmount = cleanLorryHire + cleanFreight - cleanLoadingMamul + cleanRtoFine;
-
+    // 1. TDS % strictly calculated on Lorry Hire
     const tdsPercentNum = parseFloat(tdsPercentage) || 0;
-    const calculatedTds = (grossAmount * tdsPercentNum) / 100;
+    const calculatedTds = (cleanLorryHire * tdsPercentNum) / 100;
     const roundedTds = Number(calculatedTds.toFixed(2));
 
-    const totalDeductions = cleanExtra + cleanLessAdvance + cleanComlyCom + roundedTds;
-    const calculatedBalance = grossAmount - totalDeductions;
+    // 2. Extra charges and RTO Fine ADDED to Lorry Hire & Freight
+    const totalGrossPayable = cleanLorryHire + cleanFreight + cleanExtra;
+
+    // 3. Deductions: Loading Mamul, Challan Mamul (comlyCom), RTO Fine, Less Advance, TDS
+    const totalDeductions = cleanLoadingMamul + cleanComlyCom + cleanRtoFine + cleanLessAdvance + roundedTds;
+    const calculatedBalance = totalGrossPayable - totalDeductions;
     const roundedBalance = Number(calculatedBalance.toFixed(2));
 
     setTds(roundedTds.toFixed(2));
@@ -482,30 +492,71 @@ function ChallanNotePage() {
     setBrokerAadhar(c.brokerAadhar || "");
     setBrokerAccount(c.brokerAccount || "");
     setBrokerMobile(c.brokerMobile || "");
-    setLorryHire(c.lorryHire ? c.lorryHire.toString() : "");
-    setFreight(c.freight ? c.freight.toString() : "");
-    setLoadingMamul(c.loadingMamul ? c.loadingMamul.toString() : "0");
-    setComlyCom(c.comlyCom ? c.comlyCom.toString() : "0");
-    setRtoFine(c.rtoFine ? c.rtoFine.toString() : "");
-    setExtraCharges(c.extraCharges ? c.extraCharges.toString() : "");
-    setTds(c.tds ? Number(c.tds).toFixed(2) : "0.00");
+    setLorryHire(
+      c.lorryHire !== undefined && c.lorryHire !== null && Number(c.lorryHire) !== 0
+        ? c.lorryHire.toString()
+        : c.freight && Number(c.freight) !== 0
+          ? c.freight.toString()
+          : "",
+    );
+    setFreight(
+      c.freight !== undefined && c.freight !== null && Number(c.freight) !== 0
+        ? c.freight.toString()
+        : "",
+    );
+    setLoadingMamul(
+      c.loadingMamul !== undefined && c.loadingMamul !== null
+        ? c.loadingMamul.toString()
+        : "0",
+    );
+    setComlyCom(
+      c.comlyCom !== undefined && c.comlyCom !== null
+        ? c.comlyCom.toString()
+        : "0",
+    );
+    setRtoFine(
+      c.rtoFine !== undefined && c.rtoFine !== null && Number(c.rtoFine) !== 0
+        ? c.rtoFine.toString()
+        : "",
+    );
+    setExtraCharges(
+      c.extraCharges !== undefined && c.extraCharges !== null && Number(c.extraCharges) !== 0
+        ? c.extraCharges.toString()
+        : "",
+    );
+    setTds(c.tds !== undefined && c.tds !== null ? Number(c.tds).toFixed(2) : "0.00");
     if (c.tdsPercentage) {
-      setTdsPercentage(c.tdsPercentage);
+      const strPct = String(c.tdsPercentage).includes("%")
+        ? String(c.tdsPercentage)
+        : `${c.tdsPercentage}%`;
+      setTdsPercentage(strPct === "1%" || strPct === "2%" ? strPct : "0%");
     } else {
-      const g = (Number(c.freight) || 0) - (Number(c.loadingMamul) || 0) + (Number(c.rtoFine) || 0);
+      const hire = Number(c.lorryHire || c.freight) || 0;
       const t = Number(c.tds) || 0;
-      if (g > 0 && t > 0) {
-        const pct = Math.round((t / g) * 100);
+      if (hire > 0 && t > 0) {
+        const pct = Math.round((t / hire) * 100);
         setTdsPercentage(pct === 1 || pct === 2 ? `${pct}%` : "0%");
       } else {
         setTdsPercentage("0%");
       }
     }
-    setLessAdvance(c.lessAdvance ? c.lessAdvance.toString() : "");
-    setCommission(c.commission ? c.commission.toString() : "");
-    setBalanceAmount(c.balanceAmount ? c.balanceAmount.toString() : "0");
+    setLessAdvance(
+      c.lessAdvance !== undefined && c.lessAdvance !== null && Number(c.lessAdvance) !== 0
+        ? c.lessAdvance.toString()
+        : "",
+    );
+    setCommission(
+      c.commission !== undefined && c.commission !== null && Number(c.commission) !== 0
+        ? c.commission.toString()
+        : "",
+    );
+    setBalanceAmount(
+      c.balanceAmount !== undefined && c.balanceAmount !== null
+        ? c.balanceAmount.toString()
+        : "0",
+    );
     setPayableAt(c.payableAt || "");
-    setBrokerNameSec5(c.brokerNameSec5 || "");
+    setBrokerNameSec5(c.brokerNameSec5 || c.brokerName || "");
   };
 
   const handleLrNoChange = (val: string) => {
@@ -549,7 +600,7 @@ function ChallanNotePage() {
       setDimLength(cn.vehicleLength || "");
       setDimWidth(cn.vehicleWidth || "");
       setDimHeight(cn.vehicleHeight || "");
-      setPayableAt(cn.toLocation || "");
+      // Note: Payable At is manual and must NOT be auto-filled from cn.toLocation
 
       // Check if Booking exists for this LR to auto-populate broker details
       const bkg = bookings.find(
@@ -647,15 +698,6 @@ function ChallanNotePage() {
         ],
       );
       const t = trucks.find((x) => x.vehicleNumber === editChallan.vehicleNumber);
-      console.log(
-        "[DEBUG] editChallan:",
-        editChallan.id,
-        "brokerName:",
-        editChallan.brokerName,
-        "ownerName:",
-        editChallan.ownerName,
-      );
-      console.log("[DEBUG] truck t:", t);
       setOwnerPan(editChallan.ownerPan || (t ? t.panCard : "") || "");
       setOwnerName(editChallan.ownerName || (t ? t.ownerName : "") || "");
       setOwnerAadhar(editChallan.ownerAadhar || (t ? t.aadharNumber : "") || "");
@@ -668,37 +710,90 @@ function ChallanNotePage() {
       setDimWidth(editChallan.dimWidth || "");
       setDimHeight(editChallan.dimHeight || "");
       const b = brokers.find((x) => x.brokerName === editChallan.brokerName);
-      console.log("[DEBUG] broker b:", b);
       setBrokerPan(editChallan.brokerPan || (b ? b.panCard : "") || "");
       setBrokerName(editChallan.brokerName || "");
       setBrokerAadhar(editChallan.brokerAadhar || (b ? b.aadharCard : "") || "");
       setBrokerAccount(editChallan.brokerAccount || (b ? b.accountNumber : "") || "");
       setBrokerMobile(editChallan.brokerMobile || (b ? b.mobileNumber : "") || "");
-      setLorryHire(editChallan.lorryHire ? editChallan.lorryHire.toString() : "");
-      setFreight(editChallan.freight ? editChallan.freight.toString() : "");
-      setLoadingMamul(editChallan.loadingMamul ? editChallan.loadingMamul.toString() : "0");
-      setComlyCom(editChallan.comlyCom ? editChallan.comlyCom.toString() : "0");
-      setRtoFine(editChallan.rtoFine ? editChallan.rtoFine.toString() : "");
-      setExtraCharges(editChallan.extraCharges ? editChallan.extraCharges.toString() : "");
-      setTds(editChallan.tds ? Number(editChallan.tds).toFixed(2) : "0.00");
+      setLorryHire(
+        editChallan.lorryHire !== undefined &&
+          editChallan.lorryHire !== null &&
+          Number(editChallan.lorryHire) !== 0
+          ? editChallan.lorryHire.toString()
+          : editChallan.freight && Number(editChallan.freight) !== 0
+            ? editChallan.freight.toString()
+            : "",
+      );
+      setFreight(
+        editChallan.freight !== undefined &&
+          editChallan.freight !== null &&
+          Number(editChallan.freight) !== 0
+          ? editChallan.freight.toString()
+          : "",
+      );
+      setLoadingMamul(
+        editChallan.loadingMamul !== undefined && editChallan.loadingMamul !== null
+          ? editChallan.loadingMamul.toString()
+          : "0",
+      );
+      setComlyCom(
+        editChallan.comlyCom !== undefined && editChallan.comlyCom !== null
+          ? editChallan.comlyCom.toString()
+          : "0",
+      );
+      setRtoFine(
+        editChallan.rtoFine !== undefined &&
+          editChallan.rtoFine !== null &&
+          Number(editChallan.rtoFine) !== 0
+          ? editChallan.rtoFine.toString()
+          : "",
+      );
+      setExtraCharges(
+        editChallan.extraCharges !== undefined &&
+          editChallan.extraCharges !== null &&
+          Number(editChallan.extraCharges) !== 0
+          ? editChallan.extraCharges.toString()
+          : "",
+      );
+      setTds(
+        editChallan.tds !== undefined && editChallan.tds !== null
+          ? Number(editChallan.tds).toFixed(2)
+          : "0.00",
+      );
       if (editChallan.tdsPercentage) {
-        setTdsPercentage(editChallan.tdsPercentage);
+        const strPct = String(editChallan.tdsPercentage).includes("%")
+          ? String(editChallan.tdsPercentage)
+          : `${editChallan.tdsPercentage}%`;
+        setTdsPercentage(strPct === "1%" || strPct === "2%" ? strPct : "0%");
       } else {
-        const g =
-          (Number(editChallan.freight) || 0) -
-          (Number(editChallan.loadingMamul) || 0) +
-          (Number(editChallan.rtoFine) || 0);
+        const hire = Number(editChallan.lorryHire || editChallan.freight) || 0;
         const t = Number(editChallan.tds) || 0;
-        if (g > 0 && t > 0) {
-          const pct = Math.round((t / g) * 100);
+        if (hire > 0 && t > 0) {
+          const pct = Math.round((t / hire) * 100);
           setTdsPercentage(pct === 1 || pct === 2 ? `${pct}%` : "0%");
         } else {
           setTdsPercentage("0%");
         }
       }
-      setLessAdvance(editChallan.lessAdvance ? editChallan.lessAdvance.toString() : "");
-      setCommission(editChallan.commission ? editChallan.commission.toString() : "");
-      setBalanceAmount(editChallan.balanceAmount ? editChallan.balanceAmount.toString() : "0");
+      setLessAdvance(
+        editChallan.lessAdvance !== undefined &&
+          editChallan.lessAdvance !== null &&
+          Number(editChallan.lessAdvance) !== 0
+          ? editChallan.lessAdvance.toString()
+          : "",
+      );
+      setCommission(
+        editChallan.commission !== undefined &&
+          editChallan.commission !== null &&
+          Number(editChallan.commission) !== 0
+          ? editChallan.commission.toString()
+          : "",
+      );
+      setBalanceAmount(
+        editChallan.balanceAmount !== undefined && editChallan.balanceAmount !== null
+          ? editChallan.balanceAmount.toString()
+          : "0",
+      );
       setPayableAt(editChallan.payableAt || "");
       setBrokerNameSec5(editChallan.brokerNameSec5 || editChallan.brokerName || "");
     } else {
@@ -746,6 +841,13 @@ function ChallanNotePage() {
     if (!val) return;
     setBrokerName(val);
     setBrokerNameSec5(val);
+    if (val === "DIRECT") {
+      setBrokerPan("");
+      setBrokerAccount("");
+      setBrokerMobile("");
+      setBrokerAadhar("");
+      return;
+    }
     const b = brokers.find((x) => x.brokerName === val);
     if (b) {
       setBrokerPan(b.panCard || "");
@@ -759,6 +861,13 @@ function ChallanNotePage() {
     if (!val) return;
     setBrokerNameSec5(val);
     setBrokerName(val);
+    if (val === "DIRECT") {
+      setBrokerPan("");
+      setBrokerAccount("");
+      setBrokerMobile("");
+      setBrokerAadhar("");
+      return;
+    }
     const b = brokers.find((x) => x.brokerName === val);
     if (b) {
       setBrokerPan(b.panCard || "");

@@ -6,8 +6,11 @@ import { useMasterStore } from "../lib/master-store";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_app/billing")({
-  validateSearch: (search: Record<string, unknown>) => ({
-    editId: (search.editId as string) || undefined,
+  validateSearch: (search: Record<string, unknown>): { editId?: string; print?: string; autoPrint?: string; id?: string } => ({
+    editId: (search.editId as string) || (search.id as string) || undefined,
+    print: (search.print as string) || (search.autoPrint as string) || undefined,
+    autoPrint: (search.autoPrint as string) || undefined,
+    id: (search.id as string) || undefined,
   }),
   head: () => ({
     meta: [
@@ -338,17 +341,14 @@ const EditableCell = ({
       contentEditable={!disabled}
       suppressContentEditableWarning
       tabIndex={disabled ? -1 : (tabIndex ?? 0)}
-      className={`outline-none rounded px-1.5 py-0.5 min-h-[1.2em] select-text uppercase ${
-        disabled ? "cursor-not-allowed opacity-90 select-none" : ""
-      } ${
-        singleLine ? "whitespace-nowrap overflow-hidden" : "break-words whitespace-pre-wrap"
-      } ${
-        showBorder
+      className={`outline-none rounded px-1.5 py-0.5 min-h-[1.2em] select-text uppercase ${disabled ? "cursor-not-allowed opacity-90 select-none" : ""
+        } ${singleLine ? "whitespace-nowrap overflow-hidden" : "break-words whitespace-pre-wrap"
+        } ${showBorder
           ? isFocused && !disabled
             ? "border-[1.5px] border-solid border-black bg-white shadow-sm print:border-[1.5px] print:border-solid print:border-black print:bg-slate-50"
             : "border-[1.5px] border-solid border-black bg-white print:border-[1.5px] print:border-solid print:border-black print:bg-slate-50"
           : ""
-      } ${className}`}
+        } ${className}`}
       onFocus={() => {
         if (disabled) return;
         setIsFocused(true);
@@ -664,10 +664,10 @@ function BillingPage() {
         rows:
           existingBill.items && existingBill.items.length > 0
             ? existingBill.items.map((item) => ({
-                ...item,
-                haltingAmount: item.haltingAmount || "",
-                rtoFine: item.rtoFine || "",
-              }))
+              ...item,
+              haltingAmount: item.haltingAmount || "",
+              rtoFine: item.rtoFine || "",
+            }))
             : [],
         bankName: existingBill.bankName || "",
         bankBranch: existingBill.bankBranch || "",
@@ -687,16 +687,16 @@ function BillingPage() {
     // 2. Otherwise, construct from ConsignmentNote + Arrival + Challan
     const arrReport = cnNote
       ? arrivalReports.find(
-          (ar) => matchLr(ar.lr_no, cnNote.lrNumber) || matchLr(ar.lr_no, cnNote.consignmentNoteNo),
-        )
+        (ar) => matchLr(ar.lr_no, cnNote.lrNumber) || matchLr(ar.lr_no, cnNote.consignmentNoteNo),
+      )
       : undefined;
     const challan = cnNote
       ? challans.find((ch) =>
-          ch.items.some(
-            (item) =>
-              matchLr(item.cnNo, cnNote.lrNumber) || matchLr(item.cnNo, cnNote.consignmentNoteNo),
-          ),
-        )
+        ch.items.some(
+          (item) =>
+            matchLr(item.cnNo, cnNote.lrNumber) || matchLr(item.cnNo, cnNote.consignmentNoteNo),
+        ),
+      )
       : undefined;
     const matchedCompany = cnNote
       ? companies.find((c) => c.consigneeName === cnNote.consignorName)
@@ -1437,622 +1437,622 @@ function BillingPage() {
           >
             {/* INNER WRAPPER FOR 2PX BORDER */}
             <fieldset disabled={isLocked} className={`contents border-0 p-0 m-0 min-w-0 ${isLocked ? "pointer-events-none select-none" : ""}`}>
-            <div className="border border-black h-auto w-full flex flex-col justify-start overflow-hidden relative">
-              <div className="absolute top-0 left-0 w-full text-center font-black text-[12px] pt-1 uppercase tracking-widest text-black pointer-events-none">
-                FREIGHT BILL
-              </div>
-              {/* 1. HEADER SECTION (Height approx 40mm) */}
-              <div className="h-[40mm] flex border-b border-black">
-                {/* Left Side: Logo & Company details */}
-                <div className="w-[64%] flex items-center p-2.5 pt-2.5">
-                  <img
-                    src={logo}
-                    alt="JRKS Logo"
-                    className="h-[96px] w-[96px] object-contain flex-shrink-0 mr-3"
-                    style={{ filter: "grayscale(100%)" }}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <h1 className="text-[18px] font-extrabold tracking-tight text-black uppercase leading-tight">
-                      {invoice.companyName}
-                    </h1>
-                    <p className="text-[11px] font-bold text-black leading-none italic mt-0.5">
-                      (Transport Contractor & Logistics Solutions)
-                    </p>
+              <div className="border border-black h-auto w-full flex flex-col justify-start overflow-hidden relative">
+                <div className="absolute top-0 left-0 w-full text-center font-black text-[12px] pt-1 uppercase tracking-widest text-black pointer-events-none">
+                  FREIGHT BILL
+                </div>
+                {/* 1. HEADER SECTION (Height approx 40mm) */}
+                <div className="h-[40mm] flex border-b border-black">
+                  {/* Left Side: Logo & Company details */}
+                  <div className="w-[64%] flex items-center p-2.5 pt-2.5">
+                    <img
+                      src={logo}
+                      alt="JRKS Logo"
+                      className="h-[96px] w-[96px] object-contain flex-shrink-0 mr-3"
+                      style={{ filter: "grayscale(100%)" }}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <h1 className="text-[18px] font-extrabold tracking-tight text-black uppercase leading-tight">
+                        {invoice.companyName}
+                      </h1>
+                      <p className="text-[11px] font-bold text-black leading-none italic mt-0.5">
+                        (Transport Contractor & Logistics Solutions)
+                      </p>
 
-                    <p className="text-[9.5px] font-semibold text-black leading-normal mt-1 whitespace-nowrap animate-none">
-                      {invoice.companyAddress}
-                    </p>
+                      <p className="text-[9.5px] font-semibold text-black leading-normal mt-1 whitespace-nowrap animate-none">
+                        {invoice.companyAddress}
+                      </p>
 
-                    <div className="mt-1 flex items-center whitespace-nowrap gap-x-2 text-[10px] font-bold text-black">
-                      <span className="flex items-center gap-1">
-                        <Phone className="h-3 w-3" /> Office:{" "}
-                        <span className="font-semibold">{invoice.companyOffice}</span>
-                      </span>
-                      <span>|</span>
-                      <span className="flex items-center gap-1">
-                        <MessageCircle className="h-3 w-3" /> WhatsApp:{" "}
-                        <span className="font-semibold">{invoice.companyWhatsApp}</span>
-                      </span>
-                      <span>|</span>
-                      <span className="flex items-center gap-1">
-                        <Smartphone className="h-3 w-3" /> Mobile:{" "}
-                        <span className="font-semibold">{invoice.companyMobile}</span>
-                      </span>
-                    </div>
-
-                    <div className="text-[10px] font-bold text-black flex items-center whitespace-nowrap gap-x-2 leading-none mt-1.5 flex-wrap">
-                      <span>
-                        GST No. : <span className="text-black font-semibold">33AAWFJ4987B1ZY</span>
-                      </span>
-                      <span>|</span>
-                      <span>
-                        PAN : <span className="text-black font-semibold">AAWFJ4987B</span>
-                      </span>
-                      <span>|</span>
-                      <span>
-                        SAC Code : <span className="text-black font-semibold">9965</span>
-                      </span>
-                      <span>|</span>
-                      <span>
-                        Email :{" "}
-                        <span className="text-black font-semibold lowercase">
-                          {invoice.companyEmail || "admin@jrksdilogistics.in"}
+                      <div className="mt-1 flex items-center whitespace-nowrap gap-x-2 text-[10px] font-bold text-black">
+                        <span className="flex items-center gap-1">
+                          <Phone className="h-3 w-3" /> Office:{" "}
+                          <span className="font-semibold">{invoice.companyOffice}</span>
                         </span>
+                        <span>|</span>
+                        <span className="flex items-center gap-1">
+                          <MessageCircle className="h-3 w-3" /> WhatsApp:{" "}
+                          <span className="font-semibold">{invoice.companyWhatsApp}</span>
+                        </span>
+                        <span>|</span>
+                        <span className="flex items-center gap-1">
+                          <Smartphone className="h-3 w-3" /> Mobile:{" "}
+                          <span className="font-semibold">{invoice.companyMobile}</span>
+                        </span>
+                      </div>
+
+                      <div className="text-[10px] font-bold text-black flex items-center whitespace-nowrap gap-x-2 leading-none mt-1.5 flex-wrap">
+                        <span>
+                          GST No. : <span className="text-black font-semibold">33AAWFJ4987B1ZY</span>
+                        </span>
+                        <span>|</span>
+                        <span>
+                          PAN : <span className="text-black font-semibold">AAWFJ4987B</span>
+                        </span>
+                        <span>|</span>
+                        <span>
+                          SAC Code : <span className="text-black font-semibold">9965</span>
+                        </span>
+                        <span>|</span>
+                        <span>
+                          Email :{" "}
+                          <span className="text-black font-semibold lowercase">
+                            {invoice.companyEmail || "admin@jrksdilogistics.in"}
+                          </span>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right Side: Meta Info rows */}
+                  <div
+                    id="billing-meta-col"
+                    className="w-[36%] border-l border-black flex flex-col justify-between px-3 py-2 pt-2.5 text-[11px]"
+                  >
+                    <div className="flex justify-between items-center gap-2">
+                      <span className="font-bold text-black uppercase tracking-wide whitespace-nowrap text-[11px]">
+                        Bill / Invoice No:
                       </span>
+                      <EditableCell
+                        value={invoice.billNo}
+                        onChange={(val) => setInvoice((p) => ({ ...p, billNo: val }))}
+                        showBorder={true}
+                        singleLine={true}
+                        tabIndex={1}
+                        className="font-bold font-mono text-black text-right w-[155px] max-w-[155px] py-1 max-h-[2em] overflow-hidden text-[11.5px]"
+                      />
+                    </div>
+                    <div className="flex justify-between items-center gap-2">
+                      <span className="font-bold text-black uppercase tracking-wide whitespace-nowrap text-[11px]">
+                        LR Number:
+                      </span>
+                      <EditableCell
+                        value={invoice.lrNumber || ""}
+                        onChange={(val) => handleLrFieldChange(val)}
+                        showBorder={true}
+                        singleLine={true}
+                        tabIndex={2}
+                        className="font-bold font-mono text-black text-right w-[155px] max-w-[155px] py-1 max-h-[2em] overflow-hidden uppercase text-[11.5px]"
+                      />
+                    </div>
+                    <div className="flex justify-between items-center gap-2">
+                      <span className="font-bold text-black uppercase tracking-wide whitespace-nowrap text-[11px]">
+                        Billing Date:
+                      </span>
+                      <EditableCell
+                        value={invoice.date}
+                        onChange={(val) => setInvoice((p) => ({ ...p, date: val }))}
+                        showBorder={true}
+                        singleLine={true}
+                        tabIndex={3}
+                        className="font-bold text-black text-right w-[155px] max-w-[155px] py-1 max-h-[2em] overflow-hidden text-[11.5px]"
+                      />
+                    </div>
+                    <div className="flex justify-between items-center gap-2">
+                      <span className="font-bold text-black uppercase tracking-wide whitespace-nowrap text-[11px]">
+                        Submitted Date:
+                      </span>
+                      <EditableCell
+                        value={invoice.submittedDate}
+                        onChange={(val) => setInvoice((p) => ({ ...p, submittedDate: val }))}
+                        showBorder={true}
+                        singleLine={true}
+                        tabIndex={4}
+                        className="font-bold text-black text-right w-[155px] max-w-[155px] py-1 max-h-[2em] overflow-hidden text-[11.5px]"
+                      />
+                    </div>
+                    <div className="flex justify-between items-center gap-2">
+                      <span className="font-bold text-black uppercase tracking-wide whitespace-nowrap text-[11px]">
+                        Due Date:
+                      </span>
+                      <EditableCell
+                        value={invoice.dueDate}
+                        onChange={(val) => setInvoice((p) => ({ ...p, dueDate: val }))}
+                        showBorder={true}
+                        singleLine={true}
+                        tabIndex={5}
+                        className="font-bold text-black text-right w-[155px] max-w-[155px] py-1 max-h-[2em] overflow-hidden text-[11.5px]"
+                      />
                     </div>
                   </div>
                 </div>
 
-                {/* Right Side: Meta Info rows */}
-                <div
-                  id="billing-meta-col"
-                  className="w-[36%] border-l border-black flex flex-col justify-between px-3 py-2 pt-2.5 text-[11px]"
-                >
-                  <div className="flex justify-between items-center gap-2">
-                    <span className="font-bold text-black uppercase tracking-wide whitespace-nowrap text-[11px]">
-                      Bill / Invoice No:
-                    </span>
-                    <EditableCell
-                      value={invoice.billNo}
-                      onChange={(val) => setInvoice((p) => ({ ...p, billNo: val }))}
-                      showBorder={true}
-                      singleLine={true}
-                      tabIndex={1}
-                      className="font-bold font-mono text-black text-right w-[155px] max-w-[155px] py-1 max-h-[2em] overflow-hidden text-[11.5px]"
-                    />
+                {/* 2. CUSTOMER & ROUTE SECTION (Height approx 32mm) */}
+                <div className="h-[32mm] flex border-b border-black">
+                  {/* Left Side: Billed To Customer */}
+                  <div
+                    id="billing-section2-left"
+                    className="w-[64%] p-2.5 flex flex-col text-[11px] leading-tight justify-between h-full"
+                  >
+                    <div className="flex flex-col justify-between h-full py-0.5">
+                      <span className="text-[10px] font-black text-black uppercase tracking-wider">
+                        CONSIGNOR / BILLED TO:
+                      </span>
+                      <div className="flex flex-col justify-evenly flex-1 mt-1 text-[11px] leading-snug">
+                        <div className="flex gap-1.5 items-center">
+                          <span className="font-extrabold text-black uppercase whitespace-nowrap text-[11px]">
+                            Name:
+                          </span>
+                          <EditableCell
+                            value={invoice.customerName}
+                            onChange={(val) => setInvoice((p) => ({ ...p, customerName: val }))}
+                            singleLine={true}
+                            maxWords={50}
+                            className="font-bold text-black uppercase flex-1 py-0.5 min-h-0 text-[12.5px]"
+                          />
+                        </div>
+                        <div className="flex gap-1.5 items-start">
+                          <span className="font-extrabold text-black uppercase whitespace-nowrap text-[11px] mt-0.5">
+                            Address:
+                          </span>
+                          <EditableCell
+                            value={invoice.customerAddress}
+                            onChange={(val) => setInvoice((p) => ({ ...p, customerAddress: val }))}
+                            singleLine={false}
+                            className="text-black uppercase flex-1 py-0.5 min-h-0 text-[10.5px] leading-normal max-h-[3.6em] overflow-hidden"
+                          />
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex justify-between items-center gap-2">
-                    <span className="font-bold text-black uppercase tracking-wide whitespace-nowrap text-[11px]">
-                      LR Number:
-                    </span>
-                    <EditableCell
-                      value={invoice.lrNumber || ""}
-                      onChange={(val) => handleLrFieldChange(val)}
-                      showBorder={true}
-                      singleLine={true}
-                      tabIndex={2}
-                      className="font-bold font-mono text-black text-right w-[155px] max-w-[155px] py-1 max-h-[2em] overflow-hidden uppercase text-[11.5px]"
-                    />
-                  </div>
-                  <div className="flex justify-between items-center gap-2">
-                    <span className="font-bold text-black uppercase tracking-wide whitespace-nowrap text-[11px]">
-                      Billing Date:
-                    </span>
-                    <EditableCell
-                      value={invoice.date}
-                      onChange={(val) => setInvoice((p) => ({ ...p, date: val }))}
-                      showBorder={true}
-                      singleLine={true}
-                      tabIndex={3}
-                      className="font-bold text-black text-right w-[155px] max-w-[155px] py-1 max-h-[2em] overflow-hidden text-[11.5px]"
-                    />
-                  </div>
-                  <div className="flex justify-between items-center gap-2">
-                    <span className="font-bold text-black uppercase tracking-wide whitespace-nowrap text-[11px]">
-                      Submitted Date:
-                    </span>
-                    <EditableCell
-                      value={invoice.submittedDate}
-                      onChange={(val) => setInvoice((p) => ({ ...p, submittedDate: val }))}
-                      showBorder={true}
-                      singleLine={true}
-                      tabIndex={4}
-                      className="font-bold text-black text-right w-[155px] max-w-[155px] py-1 max-h-[2em] overflow-hidden text-[11.5px]"
-                    />
-                  </div>
-                  <div className="flex justify-between items-center gap-2">
-                    <span className="font-bold text-black uppercase tracking-wide whitespace-nowrap text-[11px]">
-                      Due Date:
-                    </span>
-                    <EditableCell
-                      value={invoice.dueDate}
-                      onChange={(val) => setInvoice((p) => ({ ...p, dueDate: val }))}
-                      showBorder={true}
-                      singleLine={true}
-                      tabIndex={5}
-                      className="font-bold text-black text-right w-[155px] max-w-[155px] py-1 max-h-[2em] overflow-hidden text-[11.5px]"
-                    />
-                  </div>
-                </div>
-              </div>
 
-              {/* 2. CUSTOMER & ROUTE SECTION (Height approx 32mm) */}
-              <div className="h-[32mm] flex border-b border-black">
-                {/* Left Side: Billed To Customer */}
-                <div
-                  id="billing-section2-left"
-                  className="w-[64%] p-2.5 flex flex-col text-[11px] leading-tight justify-between h-full"
-                >
-                  <div className="flex flex-col justify-between h-full py-0.5">
-                    <span className="text-[10px] font-black text-black uppercase tracking-wider">
-                      CONSIGNOR / BILLED TO:
-                    </span>
-                    <div className="flex flex-col justify-evenly flex-1 mt-1 text-[11px] leading-snug">
-                      <div className="flex gap-1.5 items-center">
-                        <span className="font-extrabold text-black uppercase whitespace-nowrap text-[11px]">
-                          Name:
+                  {/* Right Side: Customer GST, PAN and Route info */}
+                  <div
+                    id="billing-section2-right"
+                    className="w-[36%] border-l border-black p-2.5 flex flex-col justify-between text-[11px] leading-tight h-full"
+                  >
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center w-full">
+                        <span className="font-bold text-black w-20 uppercase text-[11px]">
+                          GST NO:
                         </span>
                         <EditableCell
-                          value={invoice.customerName}
-                          onChange={(val) => setInvoice((p) => ({ ...p, customerName: val }))}
+                          value={invoice.customerGst}
+                          onChange={(val) => setInvoice((p) => ({ ...p, customerGst: val }))}
+                          showBorder={true}
                           singleLine={true}
-                          maxWords={50}
-                          className="font-bold text-black uppercase flex-1 py-0.5 min-h-0 text-[12.5px]"
+                          className="font-mono text-black font-bold w-[200px] max-w-[200px] py-1 text-[13px]"
                         />
                       </div>
-                      <div className="flex gap-1.5 items-start">
-                        <span className="font-extrabold text-black uppercase whitespace-nowrap text-[11px] mt-0.5">
-                          Address:
+                      <div className="flex justify-between items-center w-full">
+                        <span className="font-bold text-black w-20 uppercase text-[11px]">
+                          PAN No:
                         </span>
                         <EditableCell
-                          value={invoice.customerAddress}
-                          onChange={(val) => setInvoice((p) => ({ ...p, customerAddress: val }))}
-                          singleLine={false}
-                          className="text-black uppercase flex-1 py-0.5 min-h-0 text-[10.5px] leading-normal max-h-[3.6em] overflow-hidden"
+                          value={invoice.customerPan}
+                          onChange={(val) => setInvoice((p) => ({ ...p, customerPan: val }))}
+                          showBorder={true}
+                          singleLine={true}
+                          className="font-mono text-black font-bold w-[200px] max-w-[200px] py-1 text-[13px]"
+                        />
+                      </div>
+                    </div>
+                    <div className="pt-2 mt-auto flex justify-between gap-3 pb-0.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-black uppercase text-[10px]">FROM:</span>
+                        <EditableCell
+                          value={invoice.fromLocation}
+                          onChange={(val) => setInvoice((p) => ({ ...p, fromLocation: val }))}
+                          showBorder={true}
+                          singleLine={true}
+                          className="font-bold text-black uppercase w-[120px] max-w-[120px] py-1 text-center text-[11.5px]"
+                        />
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-black uppercase text-[10px]">TO:</span>
+                        <EditableCell
+                          value={invoice.toLocation}
+                          onChange={(val) => setInvoice((p) => ({ ...p, toLocation: val }))}
+                          showBorder={true}
+                          singleLine={true}
+                          className="font-bold text-black uppercase w-[120px] max-w-[120px] py-1 text-center text-[11.5px]"
                         />
                       </div>
                     </div>
                   </div>
                 </div>
 
-                {/* Right Side: Customer GST, PAN and Route info */}
+                {/* 3. MAIN TABLE SECTION */}
                 <div
-                  id="billing-section2-right"
-                  className="w-[36%] border-l border-black p-2.5 flex flex-col justify-between text-[11px] leading-tight h-full"
+                  id="billing-section3"
+                  className="flex-initial flex flex-col min-h-0 bg-white overflow-hidden"
                 >
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-center w-full">
-                      <span className="font-bold text-black w-20 uppercase text-[11px]">
-                        GST NO:
-                      </span>
-                      <EditableCell
-                        value={invoice.customerGst}
-                        onChange={(val) => setInvoice((p) => ({ ...p, customerGst: val }))}
-                        showBorder={true}
-                        singleLine={true}
-                        className="font-mono text-black font-bold w-[200px] max-w-[200px] py-1 text-[13px]"
-                      />
-                    </div>
-                    <div className="flex justify-between items-center w-full">
-                      <span className="font-bold text-black w-20 uppercase text-[11px]">
-                        PAN No:
-                      </span>
-                      <EditableCell
-                        value={invoice.customerPan}
-                        onChange={(val) => setInvoice((p) => ({ ...p, customerPan: val }))}
-                        showBorder={true}
-                        singleLine={true}
-                        className="font-mono text-black font-bold w-[200px] max-w-[200px] py-1 text-[13px]"
-                      />
-                    </div>
+                  {/* Payment notice */}
+                  <div className="text-center text-[8px] font-bold text-black border-t border-b border-black py-0.5 italic">
+                    Bill must be paid within (30) days of Presentation, otherwise interest will be
+                    charged @ 24% p.a
                   </div>
-                  <div className="pt-2 mt-auto flex justify-between gap-3 pb-0.5">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-bold text-black uppercase text-[10px]">FROM:</span>
-                      <EditableCell
-                        value={invoice.fromLocation}
-                        onChange={(val) => setInvoice((p) => ({ ...p, fromLocation: val }))}
-                        showBorder={true}
-                        singleLine={true}
-                        className="font-bold text-black uppercase w-[120px] max-w-[120px] py-1 text-center text-[11.5px]"
-                      />
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-bold text-black uppercase text-[10px]">TO:</span>
-                      <EditableCell
-                        value={invoice.toLocation}
-                        onChange={(val) => setInvoice((p) => ({ ...p, toLocation: val }))}
-                        showBorder={true}
-                        singleLine={true}
-                        className="font-bold text-black uppercase w-[120px] max-w-[120px] py-1 text-center text-[11.5px]"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* 3. MAIN TABLE SECTION */}
-              <div
-                id="billing-section3"
-                className="flex-initial flex flex-col min-h-0 bg-white overflow-hidden"
-              >
-                {/* Payment notice */}
-                <div className="text-center text-[8px] font-bold text-black border-t border-b border-black py-0.5 italic">
-                  Bill must be paid within (30) days of Presentation, otherwise interest will be
-                  charged @ 24% p.a
-                </div>
-                <table className="w-full border-collapse table-fixed text-[12px] leading-normal">
-                  <thead>
-                    <tr
-                      style={{ backgroundColor: "#cccccc", color: "#000000" }}
-                      className="border-b border-black text-center text-[9px] leading-tight font-extrabold uppercase"
-                    >
-                      <th
-                        style={{ borderRight: "1.5px solid #000000" }}
-                        className="py-1 px-0.5 w-[4.5%] whitespace-normal break-words"
-                      >
-                        C/Note No.
-                      </th>
-                      <th
-                        style={{ borderRight: "1.5px solid #000000" }}
-                        className="py-1 px-0.5 w-[8%] whitespace-normal break-words"
-                      >
-                        Date
-                      </th>
-                      <th
-                        style={{ borderRight: "1.5px solid #000000" }}
-                        className="py-1 px-0.5 w-[9%] whitespace-normal break-words"
-                      >
-                        Lorry No
-                      </th>
-                      <th
-                        style={{ borderRight: "1.5px solid #000000" }}
-                        className="py-1 px-1 w-[14%] text-left whitespace-normal break-words"
-                      >
-                        Goods
-                      </th>
-                      <th
-                        style={{ borderRight: "1.5px solid #000000" }}
-                        className="py-1 px-0.5 w-[11.5%] whitespace-normal break-words"
-                      >
-                        Party Inv. No.
-                      </th>
-                      <th
-                        style={{ borderRight: "1.5px solid #000000" }}
-                        className="py-1 px-0.5 w-[7.5%] whitespace-normal break-words"
-                      >
-                        Arv.Date
-                      </th>
-                      <th
-                        style={{ borderRight: "1.5px solid #000000" }}
-                        className="py-1 px-0.5 w-[7.5%] whitespace-normal break-words"
-                      >
-                        Unld.Date
-                      </th>
-                      <th
-                        style={{ borderRight: "1.5px solid #000000" }}
-                        className="py-1 px-0.5 w-[3.5%] whitespace-normal break-words"
-                      >
-                        No of Pkg
-                      </th>
-                      <th
-                        style={{ borderRight: "1.5px solid #000000" }}
-                        className="py-1 px-0.5 w-[8.5%] whitespace-normal break-words"
-                      >
-                        Wgt MT/KG
-                      </th>
-                      <th
-                        style={{ borderRight: "1.5px solid #000000" }}
-                        className="py-1 px-0.5 w-[8%] text-right whitespace-normal break-words"
-                      >
-                        Rate
-                      </th>
-                      <th
-                        style={{ borderRight: "1.5px solid #000000" }}
-                        className="py-1 px-0.5 w-[5.5%] text-right whitespace-normal break-words"
-                      >
-                        Halting Amt
-                      </th>
-                      <th
-                        style={{ borderRight: "1.5px solid #000000" }}
-                        className="py-1 px-0.5 w-[5.5%] text-right whitespace-normal break-words"
-                      >
-                        RTO Fine
-                      </th>
-                      <th className="py-1 px-1 w-[6.5%] text-right whitespace-normal break-words">
-                        Amount
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {editableRows.map((row, idx) => (
+                  <table className="w-full border-collapse table-fixed text-[12px] leading-normal">
+                    <thead>
                       <tr
-                        key={row.id}
-                        className="body-row border-b border-black hover:bg-gray-100/50"
+                        style={{ backgroundColor: "#cccccc", color: "#000000" }}
+                        className="border-b border-black text-center text-[9px] leading-tight font-extrabold uppercase"
                       >
-                        <td className="border-r-2 border-black text-center font-bold text-black py-2 overflow-hidden">
-                          <EditableCell
-                            value={row.lrNo}
-                            onChange={(val) => handleUpdateRow(idx, { lrNo: val })}
-                            singleLine={true}
-                            maxChars={20}
-                            className="text-center font-bold text-[12px] whitespace-nowrap overflow-hidden px-1"
-                          />
+                        <th
+                          style={{ borderRight: "1.5px solid #000000" }}
+                          className="py-1 px-0.5 w-[4.5%] whitespace-normal break-words"
+                        >
+                          C/Note No.
+                        </th>
+                        <th
+                          style={{ borderRight: "1.5px solid #000000" }}
+                          className="py-1 px-0.5 w-[8%] whitespace-normal break-words"
+                        >
+                          Date
+                        </th>
+                        <th
+                          style={{ borderRight: "1.5px solid #000000" }}
+                          className="py-1 px-0.5 w-[9%] whitespace-normal break-words"
+                        >
+                          Lorry No
+                        </th>
+                        <th
+                          style={{ borderRight: "1.5px solid #000000" }}
+                          className="py-1 px-1 w-[14%] text-left whitespace-normal break-words"
+                        >
+                          Goods
+                        </th>
+                        <th
+                          style={{ borderRight: "1.5px solid #000000" }}
+                          className="py-1 px-0.5 w-[11.5%] whitespace-normal break-words"
+                        >
+                          Party Inv. No.
+                        </th>
+                        <th
+                          style={{ borderRight: "1.5px solid #000000" }}
+                          className="py-1 px-0.5 w-[7.5%] whitespace-normal break-words"
+                        >
+                          Arv.Date
+                        </th>
+                        <th
+                          style={{ borderRight: "1.5px solid #000000" }}
+                          className="py-1 px-0.5 w-[7.5%] whitespace-normal break-words"
+                        >
+                          Unld.Date
+                        </th>
+                        <th
+                          style={{ borderRight: "1.5px solid #000000" }}
+                          className="py-1 px-0.5 w-[3.5%] whitespace-normal break-words"
+                        >
+                          No of Pkg
+                        </th>
+                        <th
+                          style={{ borderRight: "1.5px solid #000000" }}
+                          className="py-1 px-0.5 w-[8.5%] whitespace-normal break-words"
+                        >
+                          Wgt MT/KG
+                        </th>
+                        <th
+                          style={{ borderRight: "1.5px solid #000000" }}
+                          className="py-1 px-0.5 w-[8%] text-right whitespace-normal break-words"
+                        >
+                          Rate
+                        </th>
+                        <th
+                          style={{ borderRight: "1.5px solid #000000" }}
+                          className="py-1 px-0.5 w-[5.5%] text-right whitespace-normal break-words"
+                        >
+                          Halting Amt
+                        </th>
+                        <th
+                          style={{ borderRight: "1.5px solid #000000" }}
+                          className="py-1 px-0.5 w-[5.5%] text-right whitespace-normal break-words"
+                        >
+                          RTO Fine
+                        </th>
+                        <th className="py-1 px-1 w-[6.5%] text-right whitespace-normal break-words">
+                          Amount
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {editableRows.map((row, idx) => (
+                        <tr
+                          key={row.id}
+                          className="body-row border-b border-black hover:bg-gray-100/50"
+                        >
+                          <td className="border-r-2 border-black text-center font-bold text-black py-2 overflow-hidden">
+                            <EditableCell
+                              value={row.lrNo}
+                              onChange={(val) => handleUpdateRow(idx, { lrNo: val })}
+                              singleLine={true}
+                              maxChars={20}
+                              className="text-center font-bold text-[12px] whitespace-nowrap overflow-hidden px-1"
+                            />
+                          </td>
+                          <td className="border-r-2 border-black text-center text-black overflow-hidden">
+                            <EditableCell
+                              value={row.date}
+                              onChange={(val) => handleUpdateRow(idx, { date: val })}
+                              singleLine={true}
+                              maxChars={10}
+                              className="text-center font-mono text-[11px] whitespace-nowrap overflow-hidden px-0.5"
+                            />
+                          </td>
+                          <td className="border-r-2 border-black text-center font-bold text-black overflow-hidden">
+                            <EditableCell
+                              value={(row.sNo || "").replace(/\s+/g, "")}
+                              onChange={(val) =>
+                                handleUpdateRow(idx, { sNo: val.replace(/\s+/g, "") })
+                              }
+                              singleLine={true}
+                              maxChars={20}
+                              className="text-center uppercase font-bold text-[12px] whitespace-nowrap overflow-hidden px-1"
+                            />
+                          </td>
+                          <td className="border-r-2 border-black text-left pl-2 text-black overflow-hidden">
+                            <EditableCell
+                              value={row.goods}
+                              onChange={(val) => handleUpdateRow(idx, { goods: val })}
+                              singleLine={true}
+                              maxChars={50}
+                              className="text-left font-semibold text-[12px] whitespace-nowrap overflow-hidden"
+                            />
+                          </td>
+                          <td className="border-r-2 border-black text-center text-black overflow-hidden">
+                            <EditableCell
+                              value={row.partyInvoiceNo}
+                              onChange={(val) => handleUpdateRow(idx, { partyInvoiceNo: val })}
+                              singleLine={true}
+                              maxChars={50}
+                              className="text-center text-[12px] whitespace-nowrap overflow-hidden px-1"
+                            />
+                          </td>
+                          <td className="border-r-2 border-black text-center text-black overflow-hidden">
+                            <EditableCell
+                              value={row.arvDate}
+                              onChange={(val) => handleUpdateRow(idx, { arvDate: val })}
+                              singleLine={true}
+                              maxChars={10}
+                              className="text-center font-mono text-[11px] whitespace-nowrap overflow-hidden px-0.5"
+                            />
+                          </td>
+                          <td className="border-r-2 border-black text-center text-black overflow-hidden">
+                            <EditableCell
+                              value={row.unldDate}
+                              onChange={(val) => handleUpdateRow(idx, { unldDate: val })}
+                              singleLine={true}
+                              maxChars={10}
+                              className="text-center font-mono text-[11px] whitespace-nowrap overflow-hidden px-0.5"
+                            />
+                          </td>
+                          <td className="border-r-2 border-black text-center text-black overflow-hidden">
+                            <EditableCell
+                              value={row.noOfPkg}
+                              onChange={(val) => handleUpdateRow(idx, { noOfPkg: val })}
+                              singleLine={true}
+                              maxChars={6}
+                              className="text-center text-[12px] whitespace-nowrap overflow-hidden px-0.5"
+                            />
+                          </td>
+                          <td className="border-r-2 border-black text-right pr-2 font-mono text-black overflow-hidden">
+                            <EditableCell
+                              value={row.weight}
+                              onChange={(val) => handleUpdateRow(idx, { weight: val })}
+                              singleLine={true}
+                              maxChars={15}
+                              className="text-right text-[12px] whitespace-nowrap overflow-hidden px-1"
+                            />
+                          </td>
+                          <td className="border-r-2 border-black text-right pr-2 font-mono text-black overflow-hidden">
+                            <EditableCell
+                              value={row.rate}
+                              onChange={(val) => handleUpdateRow(idx, { rate: val })}
+                              singleLine={true}
+                              maxChars={12}
+                              className="text-right text-[12px] whitespace-nowrap overflow-hidden px-1"
+                            />
+                          </td>
+                          <td className="border-r-2 border-black text-right pr-1 font-mono text-black overflow-hidden">
+                            <EditableCell
+                              value={row.haltingAmount}
+                              onChange={(val) => handleUpdateRow(idx, { haltingAmount: val })}
+                              singleLine={true}
+                              maxChars={12}
+                              className="text-right text-[12px] whitespace-nowrap overflow-hidden px-1"
+                            />
+                          </td>
+                          <td className="border-r-2 border-black text-right pr-1 font-mono text-black overflow-hidden">
+                            <EditableCell
+                              value={row.rtoFine}
+                              onChange={(val) => handleUpdateRow(idx, { rtoFine: val })}
+                              singleLine={true}
+                              maxChars={12}
+                              className="text-right text-[12px] whitespace-nowrap overflow-hidden px-1"
+                            />
+                          </td>
+                          <td className="text-right pr-2 font-bold font-mono text-black overflow-hidden">
+                            <EditableCell
+                              value={row.amount}
+                              onChange={(val) => handleUpdateRow(idx, { amount: val })}
+                              singleLine={true}
+                              maxChars={15}
+                              className="text-right text-[12px] whitespace-nowrap overflow-hidden font-bold px-1"
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                      {/* Summary Row 1: Rupees in Words & GST */}
+                      {/* Summary Row 1: Rupees in Words & GST */}
+                      <tr className="summary-row border-b border-black">
+                        <td
+                          rowSpan={3}
+                          colSpan={9}
+                          className="border-r border-black py-1 px-2 text-left font-bold text-black uppercase align-middle"
+                        >
+                          <div className="flex items-start gap-1">
+                            <span className="font-extrabold text-[10px] whitespace-nowrap">
+                              Rupees in Words:
+                            </span>
+                            <EditableCell
+                              value={invoice.rupeesInWords}
+                              onChange={(val) =>
+                                setInvoice((prev) => ({ ...prev, rupeesInWords: val }))
+                              }
+                              className="font-bold text-black flex-1 italic text-[11px]"
+                            />
+                          </div>
                         </td>
-                        <td className="border-r-2 border-black text-center text-black overflow-hidden">
-                          <EditableCell
-                            value={row.date}
-                            onChange={(val) => handleUpdateRow(idx, { date: val })}
-                            singleLine={true}
-                            maxChars={10}
-                            className="text-center font-mono text-[11px] whitespace-nowrap overflow-hidden px-0.5"
-                          />
-                        </td>
-                        <td className="border-r-2 border-black text-center font-bold text-black overflow-hidden">
-                          <EditableCell
-                            value={(row.sNo || "").replace(/\s+/g, "")}
-                            onChange={(val) =>
-                              handleUpdateRow(idx, { sNo: val.replace(/\s+/g, "") })
-                            }
-                            singleLine={true}
-                            maxChars={20}
-                            className="text-center uppercase font-bold text-[12px] whitespace-nowrap overflow-hidden px-1"
-                          />
-                        </td>
-                        <td className="border-r-2 border-black text-left pl-2 text-black overflow-hidden">
-                          <EditableCell
-                            value={row.goods}
-                            onChange={(val) => handleUpdateRow(idx, { goods: val })}
-                            singleLine={true}
-                            maxChars={50}
-                            className="text-left font-semibold text-[12px] whitespace-nowrap overflow-hidden"
-                          />
-                        </td>
-                        <td className="border-r-2 border-black text-center text-black overflow-hidden">
-                          <EditableCell
-                            value={row.partyInvoiceNo}
-                            onChange={(val) => handleUpdateRow(idx, { partyInvoiceNo: val })}
-                            singleLine={true}
-                            maxChars={50}
-                            className="text-center text-[12px] whitespace-nowrap overflow-hidden px-1"
-                          />
-                        </td>
-                        <td className="border-r-2 border-black text-center text-black overflow-hidden">
-                          <EditableCell
-                            value={row.arvDate}
-                            onChange={(val) => handleUpdateRow(idx, { arvDate: val })}
-                            singleLine={true}
-                            maxChars={10}
-                            className="text-center font-mono text-[11px] whitespace-nowrap overflow-hidden px-0.5"
-                          />
-                        </td>
-                        <td className="border-r-2 border-black text-center text-black overflow-hidden">
-                          <EditableCell
-                            value={row.unldDate}
-                            onChange={(val) => handleUpdateRow(idx, { unldDate: val })}
-                            singleLine={true}
-                            maxChars={10}
-                            className="text-center font-mono text-[11px] whitespace-nowrap overflow-hidden px-0.5"
-                          />
-                        </td>
-                        <td className="border-r-2 border-black text-center text-black overflow-hidden">
-                          <EditableCell
-                            value={row.noOfPkg}
-                            onChange={(val) => handleUpdateRow(idx, { noOfPkg: val })}
-                            singleLine={true}
-                            maxChars={6}
-                            className="text-center text-[12px] whitespace-nowrap overflow-hidden px-0.5"
-                          />
-                        </td>
-                        <td className="border-r-2 border-black text-right pr-2 font-mono text-black overflow-hidden">
-                          <EditableCell
-                            value={row.weight}
-                            onChange={(val) => handleUpdateRow(idx, { weight: val })}
-                            singleLine={true}
-                            maxChars={15}
-                            className="text-right text-[12px] whitespace-nowrap overflow-hidden px-1"
-                          />
-                        </td>
-                        <td className="border-r-2 border-black text-right pr-2 font-mono text-black overflow-hidden">
-                          <EditableCell
-                            value={row.rate}
-                            onChange={(val) => handleUpdateRow(idx, { rate: val })}
-                            singleLine={true}
-                            maxChars={12}
-                            className="text-right text-[12px] whitespace-nowrap overflow-hidden px-1"
-                          />
-                        </td>
-                        <td className="border-r-2 border-black text-right pr-1 font-mono text-black overflow-hidden">
-                          <EditableCell
-                            value={row.haltingAmount}
-                            onChange={(val) => handleUpdateRow(idx, { haltingAmount: val })}
-                            singleLine={true}
-                            maxChars={12}
-                            className="text-right text-[12px] whitespace-nowrap overflow-hidden px-1"
-                          />
-                        </td>
-                        <td className="border-r-2 border-black text-right pr-1 font-mono text-black overflow-hidden">
-                          <EditableCell
-                            value={row.rtoFine}
-                            onChange={(val) => handleUpdateRow(idx, { rtoFine: val })}
-                            singleLine={true}
-                            maxChars={12}
-                            className="text-right text-[12px] whitespace-nowrap overflow-hidden px-1"
-                          />
-                        </td>
-                        <td className="text-right pr-2 font-bold font-mono text-black overflow-hidden">
-                          <EditableCell
-                            value={row.amount}
-                            onChange={(val) => handleUpdateRow(idx, { amount: val })}
-                            singleLine={true}
-                            maxChars={15}
-                            className="text-right text-[12px] whitespace-nowrap overflow-hidden font-bold px-1"
-                          />
+                        <td colSpan={4} className="py-0.5 px-1 font-semibold text-[10px] text-black">
+                          <div className="flex items-center justify-between w-full h-full">
+                            <span className="font-extrabold text-[9px] uppercase flex items-center gap-0.5">
+                              GST (
+                              <EditableCell
+                                value={invoice.gstPercentage || "0%"}
+                                onChange={(val) => setInvoice((p) => ({ ...p, gstPercentage: val }))}
+                                placeholder="0%"
+                                singleLine={true}
+                                maxChars={4}
+                                className="font-extrabold inline-block text-[9px] p-0 min-h-0 min-w-[15px] border-none text-center bg-transparent focus:bg-white select-all"
+                              />
+                              ):
+                            </span>
+                            <span className="font-mono text-[9.5px] font-bold">
+                              <EditableCell
+                                value={currentGst}
+                                onChange={(val) => setInvoice((p) => ({ ...p, gstOverride: val }))}
+                                className="font-bold inline-block"
+                              />
+                            </span>
+                          </div>
                         </td>
                       </tr>
-                    ))}
-                    {/* Summary Row 1: Rupees in Words & GST */}
-                    {/* Summary Row 1: Rupees in Words & GST */}
-                    <tr className="summary-row border-b border-black">
-                      <td
-                        rowSpan={3}
-                        colSpan={9}
-                        className="border-r border-black py-1 px-2 text-left font-bold text-black uppercase align-middle"
-                      >
-                        <div className="flex items-start gap-1">
-                          <span className="font-extrabold text-[10px] whitespace-nowrap">
-                            Rupees in Words:
-                          </span>
-                          <EditableCell
-                            value={invoice.rupeesInWords}
-                            onChange={(val) =>
-                              setInvoice((prev) => ({ ...prev, rupeesInWords: val }))
-                            }
-                            className="font-bold text-black flex-1 italic text-[11px]"
-                          />
-                        </div>
-                      </td>
-                      <td colSpan={4} className="py-0.5 px-1 font-semibold text-[10px] text-black">
-                        <div className="flex items-center justify-between w-full h-full">
-                          <span className="font-extrabold text-[9px] uppercase flex items-center gap-0.5">
-                            GST (
-                            <EditableCell
-                              value={invoice.gstPercentage || "0%"}
-                              onChange={(val) => setInvoice((p) => ({ ...p, gstPercentage: val }))}
-                              placeholder="0%"
-                              singleLine={true}
-                              maxChars={4}
-                              className="font-extrabold inline-block text-[9px] p-0 min-h-0 min-w-[15px] border-none text-center bg-transparent focus:bg-white select-all"
-                            />
-                            ):
-                          </span>
-                          <span className="font-mono text-[9.5px] font-bold">
-                            <EditableCell
-                              value={currentGst}
-                              onChange={(val) => setInvoice((p) => ({ ...p, gstOverride: val }))}
-                              className="font-bold inline-block"
-                            />
-                          </span>
-                        </div>
-                      </td>
-                    </tr>
 
-                    {/* Summary Row 2: Sub Total */}
-                    <tr className="summary-row border-b border-black">
-                      <td colSpan={4} className="py-0.5 px-1 font-semibold text-[10px] text-black">
-                        <div className="flex items-center justify-between w-full h-full">
-                          <span className="font-extrabold text-[9px] uppercase">Sub Total:</span>
-                          <span className="font-mono text-[9.5px] font-bold">
-                            <EditableCell
-                              value={currentSubTotal}
-                              onChange={(val) =>
-                                setInvoice((p) => ({ ...p, subTotalOverride: val }))
-                              }
-                              className="font-bold inline-block"
-                            />
+                      {/* Summary Row 2: Sub Total */}
+                      <tr className="summary-row border-b border-black">
+                        <td colSpan={4} className="py-0.5 px-1 font-semibold text-[10px] text-black">
+                          <div className="flex items-center justify-between w-full h-full">
+                            <span className="font-extrabold text-[9px] uppercase">Sub Total:</span>
+                            <span className="font-mono text-[9.5px] font-bold">
+                              <EditableCell
+                                value={currentSubTotal}
+                                onChange={(val) =>
+                                  setInvoice((p) => ({ ...p, subTotalOverride: val }))
+                                }
+                                className="font-bold inline-block"
+                              />
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+
+                      {/* Summary Row 3: Grand Total */}
+                      <tr className="summary-row bg-white">
+                        <td
+                          colSpan={4}
+                          className="py-0.5 px-1 font-black text-[11px] text-black bg-slate-50"
+                        >
+                          <div className="flex items-center justify-between w-full h-full">
+                            <span className="font-black text-[9.5px] uppercase tracking-wider">
+                              Grand Total:
+                            </span>
+                            <span className="font-mono font-black text-[10px]">
+                              Rs.{" "}
+                              <EditableCell
+                                value={currentGrandTotal}
+                                onChange={(val) =>
+                                  setInvoice((p) => ({ ...p, grandTotalOverride: val }))
+                                }
+                                className="font-extrabold inline-block"
+                              />
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* 5. FOOTER SECTIONS (Height exactly 32mm) */}
+                <div
+                  id="billing-section5"
+                  className="h-[32mm] flex border-t border-black text-[9px] leading-tight"
+                >
+                  {/* Column 1: Payment Instructions */}
+                  <div className="w-[36%] p-2 border-r border-black flex flex-col justify-between">
+                    <div>
+                      <span className="font-black text-black underline tracking-wide uppercase text-[12.5px]">
+                        Payment Instructions:
+                      </span>
+                      <div className="mt-1.5 space-y-1 text-[11.5px] text-black">
+                        <div className="flex">
+                          <span className="font-bold text-black w-20">Bank Name:</span>
+                          <span className="font-extrabold uppercase">HDFC BANK</span>
+                        </div>
+                        <div className="flex">
+                          <span className="font-bold text-black w-20">Account No:</span>
+                          <span className="font-extrabold font-mono tracking-wide">
+                            50200120262501
                           </span>
                         </div>
-                      </td>
-                    </tr>
-
-                    {/* Summary Row 3: Grand Total */}
-                    <tr className="summary-row bg-white">
-                      <td
-                        colSpan={4}
-                        className="py-0.5 px-1 font-black text-[11px] text-black bg-slate-50"
-                      >
-                        <div className="flex items-center justify-between w-full h-full">
-                          <span className="font-black text-[9.5px] uppercase tracking-wider">
-                            Grand Total:
-                          </span>
-                          <span className="font-mono font-black text-[10px]">
-                            Rs.{" "}
-                            <EditableCell
-                              value={currentGrandTotal}
-                              onChange={(val) =>
-                                setInvoice((p) => ({ ...p, grandTotalOverride: val }))
-                              }
-                              className="font-extrabold inline-block"
-                            />
-                          </span>
+                        <div className="flex">
+                          <span className="font-bold text-black w-20">IFSC Code:</span>
+                          <span className="font-extrabold font-mono tracking-wide">HDFC0002086</span>
                         </div>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-
-              {/* 5. FOOTER SECTIONS (Height exactly 32mm) */}
-              <div
-                id="billing-section5"
-                className="h-[32mm] flex border-t border-black text-[9px] leading-tight"
-              >
-                {/* Column 1: Payment Instructions */}
-                <div className="w-[36%] p-2 border-r border-black flex flex-col justify-between">
-                  <div>
-                    <span className="font-black text-black underline tracking-wide uppercase text-[12.5px]">
-                      Payment Instructions:
-                    </span>
-                    <div className="mt-1.5 space-y-1 text-[11.5px] text-black">
-                      <div className="flex">
-                        <span className="font-bold text-black w-20">Bank Name:</span>
-                        <span className="font-extrabold uppercase">HDFC BANK</span>
-                      </div>
-                      <div className="flex">
-                        <span className="font-bold text-black w-20">Account No:</span>
-                        <span className="font-extrabold font-mono tracking-wide">
-                          50200120262501
-                        </span>
-                      </div>
-                      <div className="flex">
-                        <span className="font-bold text-black w-20">IFSC Code:</span>
-                        <span className="font-extrabold font-mono tracking-wide">HDFC0002086</span>
-                      </div>
-                      <div className="flex">
-                        <span className="font-bold text-black w-20">Account to:</span>
-                        <span className="font-extrabold uppercase">JRKS Digital India Logistics LLP</span>
-                      </div>
-                      <div className="flex">
-                        <span className="font-bold text-black w-20">Branch:</span>
-                        <span className="font-extrabold uppercase">THIRUVERUMBUR</span>
+                        <div className="flex">
+                          <span className="font-bold text-black w-20">Account to:</span>
+                          <span className="font-extrabold uppercase">JRKS Digital India Logistics LLP</span>
+                        </div>
+                        <div className="flex">
+                          <span className="font-bold text-black w-20">Branch:</span>
+                          <span className="font-extrabold uppercase">THIRUVERUMBUR</span>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
 
-                {/* Column 2: Terms & Conditions */}
-                <div className="w-[39%] p-2 border-r border-black flex flex-col justify-between">
-                  <div>
-                    <span className="font-black text-black underline tracking-wide uppercase text-[12.5px]">
-                      Terms & Conditions:
+                  {/* Column 2: Terms & Conditions */}
+                  <div className="w-[39%] p-2 border-r border-black flex flex-col justify-between">
+                    <div>
+                      <span className="font-black text-black underline tracking-wide uppercase text-[12.5px]">
+                        Terms & Conditions:
+                      </span>
+                      <div className="mt-1.5 space-y-1.5 text-[10.2px] text-black font-extrabold uppercase leading-snug">
+                        <p>
+                          WE HEREBY CONFIRM THAT WHILE OUR TURNOVER IS ABOVE THE LIMIT SPECIFIED UNDER
+                          RULE 48(4) OF THE GST ACT, AS A GOODS TRANSPORT AGENT (GTA) WE ARE EXEMPT
+                          FROM ISSUING E-INVOICE.
+                        </p>
+                        <p className="mt-1.5 text-[10.5px] font-black text-black">
+                          NOTE - GST WILL BE PAID BY PARTY
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Column 3: Authorised Signatory Signature box */}
+                  <div className="w-[25%] p-2 flex flex-col justify-between items-center text-center relative">
+                    <span className="font-bold text-black uppercase tracking-tight text-[8px] leading-tight sig-company-header">
+                      For JRKS DIGITAL INDIA LOGISTICS LLP
                     </span>
-                    <div className="mt-1.5 space-y-1.5 text-[10.2px] text-black font-extrabold uppercase leading-snug">
-                      <p>
-                        WE HEREBY CONFIRM THAT WHILE OUR TURNOVER IS ABOVE THE LIMIT SPECIFIED UNDER
-                        RULE 48(4) OF THE GST ACT, AS A GOODS TRANSPORT AGENT (GTA) WE ARE EXEMPT
-                        FROM ISSUING E-INVOICE.
-                      </p>
-                      <p className="mt-1.5 text-[10.5px] font-black text-black">
-                        NOTE - GST WILL BE PAID BY PARTY
-                      </p>
+
+                    <div className="w-full flex flex-col items-center mt-auto pb-0.5">
+                      <span className="font-bold text-black uppercase tracking-wider text-[8px] sig-label">
+                        Authorised Signatory
+                      </span>
                     </div>
                   </div>
                 </div>
-
-                {/* Column 3: Authorised Signatory Signature box */}
-                <div className="w-[25%] p-2 flex flex-col justify-between items-center text-center relative">
-                  <span className="font-bold text-black uppercase tracking-tight text-[8px] leading-tight sig-company-header">
-                    For JRKS DIGITAL INDIA LOGISTICS LLP
-                  </span>
-
-                  <div className="w-full flex flex-col items-center mt-auto pb-0.5">
-                    <span className="font-bold text-black uppercase tracking-wider text-[8px] sig-label">
-                      Authorised Signatory
-                    </span>
-                  </div>
-                </div>
               </div>
-            </div>
             </fieldset>
           </div>
         </div>
@@ -2075,20 +2075,20 @@ function BillingPage() {
           >
             <RotateCcw className="h-4.5 w-4.5" /> Clear Form
           </button>
-        <button
-          type="button"
-          onClick={() => handleSave(false)}
-          className="flex items-center gap-2 bg-[#1E3A8A] hover:bg-blue-800 text-white font-extrabold text-[13px] tracking-wider uppercase px-8 py-3.5 rounded-full shadow-md hover:shadow-lg transition-all duration-200 cursor-pointer"
-        >
-          <Save className="h-4.5 w-4.5" /> Save
-        </button>
-        <button
-          type="button"
-          onClick={() => handleSave(true)}
-          className="flex items-center gap-2 bg-[#1E3A8A] hover:bg-blue-800 text-white font-extrabold text-[13px] tracking-wider uppercase px-8 py-3.5 rounded-full shadow-md hover:shadow-lg transition-all duration-200 cursor-pointer"
-        >
-          <Printer className="h-4.5 w-4.5" /> Save & Print
-        </button>
+          <button
+            type="button"
+            onClick={() => handleSave(false)}
+            className="flex items-center gap-2 bg-[#1E3A8A] hover:bg-blue-800 text-white font-extrabold text-[13px] tracking-wider uppercase px-8 py-3.5 rounded-full shadow-md hover:shadow-lg transition-all duration-200 cursor-pointer"
+          >
+            <Save className="h-4.5 w-4.5" /> Save
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSave(true)}
+            className="flex items-center gap-2 bg-[#1E3A8A] hover:bg-blue-800 text-white font-extrabold text-[13px] tracking-wider uppercase px-8 py-3.5 rounded-full shadow-md hover:shadow-lg transition-all duration-200 cursor-pointer"
+          >
+            <Printer className="h-4.5 w-4.5" /> Save & Print
+          </button>
         </div>
       </div>
     </div>

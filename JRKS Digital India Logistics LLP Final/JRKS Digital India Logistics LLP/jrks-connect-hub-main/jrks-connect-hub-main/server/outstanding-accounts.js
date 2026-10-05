@@ -19,7 +19,7 @@ export function setupOutstandingAccounts(app) {
         const [ledger] = await pool.query("SELECT * FROM outstanding_ledger WHERE partyId = ? ORDER BY timestamp DESC LIMIT 1", [comp.id]);
         
         let outstandingBalance = 0;
-        let status = "Settled";
+        let status = "Not Received";
         let lastTransactionDate = "-";
 
         if (ledger.length > 0) {
@@ -50,7 +50,7 @@ export function setupOutstandingAccounts(app) {
         const [ledger] = await pool.query("SELECT * FROM outstanding_ledger WHERE partyId = ? ORDER BY timestamp DESC LIMIT 1", [brok.id]);
         
         let outstandingBalance = 0;
-        let status = "Settled";
+        let status = "Not Paid";
         let lastTransactionDate = "-";
 
         if (ledger.length > 0) {

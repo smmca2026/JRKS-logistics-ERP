@@ -543,138 +543,27 @@ function VoucherEntryPage() {
       setNarration(parts.join(" "));
     }
 
-    // Auto-generate ledger item rows from Challan / Consignment Note / Booking
-    const generatedItems: VoucherItem[] = [];
-    let sNo = 1;
-
-    if (matchedChallan) {
-      const partDesc =
-        (Array.isArray(matchedChallan.items) && matchedChallan.items[0]?.particulars) ||
-        matchedCn?.items?.[0]?.description ||
+    // Auto-populate paidTo if empty and broker or truck owner is found
+    if (!paidTo) {
+      const resolvedParty =
+        matchedChallan?.brokerName ||
+        matchedChallan?.ownerName ||
+        matchedBooking?.brokerName ||
+        matchedBooking?.truckOwner ||
         "";
-
-      // 1. Balance Amount (Code 2)
-      if (Number(matchedChallan.balanceAmount) > 0) {
-        generatedItems.push({
-          sNo: sNo++,
-          codeNo: "2",
-          expenseAccountName: "L H BALANCE EXP.",
-          description: partDesc || "LORRY HIRE BALANCE",
-          refNo: trimmedLr,
-          chequeDkNo: "",
-          modeOfPayment: "Cash",
-          payment: Number(matchedChallan.balanceAmount),
-          creditDebit: "Debit",
-        });
+      if (resolvedParty && resolvedParty !== "DIRECT") {
+        setPaidTo(resolvedParty);
       }
-
-      // 2. Advance Amount (Code 1)
-      if (Number(matchedChallan.lessAdvance) > 0) {
-        generatedItems.push({
-          sNo: sNo++,
-          codeNo: "1",
-          expenseAccountName: "L H ADVANCE EXP.",
-          description: "LORRY HIRE ADVANCE, DIESEL AMOUNT",
-          refNo: trimmedLr,
-          chequeDkNo: "",
-          modeOfPayment: "Cash",
-          payment: Number(matchedChallan.lessAdvance),
-          creditDebit: "Debit",
-        });
-      }
-
-      // 3. RTO Fine (Code 3)
-      if (Number(matchedChallan.rtoFine) > 0) {
-        generatedItems.push({
-          sNo: sNo++,
-          codeNo: "3",
-          expenseAccountName: "RTO FINE EXP.",
-          description: "ODC LOAD RTO FINE ON LINE FINE ONLY",
-          refNo: trimmedLr,
-          chequeDkNo: "",
-          modeOfPayment: "Cash",
-          payment: Number(matchedChallan.rtoFine),
-          creditDebit: "Debit",
-        });
-      }
-
-      // 4. Loading Mamul (Code 4)
-      if (Number(matchedChallan.loadingMamul) > 0) {
-        generatedItems.push({
-          sNo: sNo++,
-          codeNo: "4",
-          expenseAccountName: "LOADING EXP.",
-          description: "VEHICLE LOADING AMOUNT",
-          refNo: trimmedLr,
-          chequeDkNo: "",
-          modeOfPayment: "Cash",
-          payment: Number(matchedChallan.loadingMamul),
-          creditDebit: "Debit",
-        });
-      }
-    } else if (matchedBooking) {
-      if (Number(matchedBooking.balanceAmount) > 0) {
-        generatedItems.push({
-          sNo: sNo++,
-          codeNo: "2",
-          expenseAccountName: "L H BALANCE EXP.",
-          description: matchedBooking.materialDescription || "LORRY HIRE BALANCE",
-          refNo: trimmedLr,
-          chequeDkNo: "",
-          modeOfPayment: "Cash",
-          payment: Number(matchedBooking.balanceAmount),
-          creditDebit: "Debit",
-        });
-      }
-      if (Number(matchedBooking.advanceAmount) > 0) {
-        generatedItems.push({
-          sNo: sNo++,
-          codeNo: "1",
-          expenseAccountName: "L H ADVANCE EXP.",
-          description: "LORRY HIRE ADVANCE, DIESEL AMOUNT",
-          refNo: trimmedLr,
-          chequeDkNo: "",
-          modeOfPayment: "Cash",
-          payment: Number(matchedBooking.advanceAmount),
-          creditDebit: "Debit",
-        });
-      }
-    } else if (matchedCn) {
-      const cnItem = matchedCn.items?.[0];
-      const freightAmt = Number(cnItem?.bookingAmount || 0);
-      generatedItems.push({
-        sNo: 1,
-        codeNo: "2",
-        expenseAccountName: "L H BALANCE EXP.",
-        description: cnItem?.description || "LORRY HIRE BALANCE",
-        refNo: trimmedLr,
-        chequeDkNo: "",
-        modeOfPayment: "Cash",
-        payment: freightAmt,
-        creditDebit: "Debit",
-      });
     }
 
-    if (generatedItems.length > 0) {
-      setItems(generatedItems);
-      toast.success(`Fetched details for LR #${trimmedLr}`);
-    } else {
-      // If no amounts, just set Ref No on row 1 with default Code 2
-      setItems([
-        {
-          sNo: 1,
-          codeNo: "2",
-          expenseAccountName: "L H BALANCE EXP.",
-          description: "LORRY HIRE BALANCE",
-          refNo: trimmedLr,
-          chequeDkNo: "",
-          modeOfPayment: "Cash",
-          payment: 0,
-          creditDebit: "Debit",
-        },
-      ]);
-      toast.info(`LR #${trimmedLr} loaded`);
-    }
+    // Update Ref No on current rows without injecting unwanted automatic rows
+    setItems((prev) => {
+      if (!prev || prev.length === 0) {
+        return [{ ...defaultItemRow(1), refNo: trimmedLr }];
+      }
+      return prev.map((item, idx) => (idx === 0 && !item.refNo ? { ...item, refNo: trimmedLr } : item));
+    });
+    toast.info(`LR #${trimmedLr} reference linked`);
   };
 
   // Save operation

@@ -129,132 +129,167 @@ export async function rebuildPartyLedger(partyId, partyType, providedPartyName =
       } catch(e) {}
     }
 
-    // 5.5 Fetch Lorry Cost for each LR to calculate Net Trip Profit
-    const [allChallans] = await pool.query("SELECT * FROM challans");
-    const [allArrivals] = await pool.query("SELECT * FROM arrival_reports");
-    
-    for (const [lrNo, data] of lrMap.entries()) {
-      let lorryCost = 0;
-      for (const chl of allChallans) {
-        const isMatch =
-          chl.challanNo === lrNo ||
-          chl.manualChallanNo === lrNo ||
-          (chl.items && chl.items.includes(`"cnNo":"${lrNo}"`));
-        if (isMatch) {
-          lorryCost += Number(chl.lorryHire || 0);
-        }
-      }
-      const matchedArr = allArrivals.find((a) => a.lr_no === lrNo || a.challan_no === lrNo);
-      if (matchedArr) {
-        lorryCost += Number(matchedArr.total_detention_amount || 0);
-        if (matchedArr.penalty_type && matchedArr.penalty_type !== "None") {
-          lorryCost -= Number(matchedArr.penalty_amount || 0);
-        }
-      }
-      data.lorryCost = lorryCost;
-    }
-
   } else {
-    // 6. Collect Payable from Arrival Reports (Vendor)
-    const [arrivals] = await pool.query(
-      `SELECT a.*, c.vehicleNumber as cVehicle, c.lorryHire, c.lessAdvance 
-       FROM arrival_reports a 
+    // 6. Collect Payable for Broker/Vendor from Challans and Arrival Reports
+    const [challanRows] = await pool.query(
+      `SELECT c.* FROM challans c WHERE LOWER(TRIM(c.brokerName)) = LOWER(TRIM(?)) AND (c.archived = 0 OR c.archived IS NULL)`,
+      [partyName]
+    );
+
+    const [arrivalRows] = await pool.query(
+      `SELECT a.* FROM arrival_reports a 
        JOIN challans c ON (
          a.challan_no = c.challanNo 
          OR a.challan_no = c.manualChallanNo 
          OR a.lr_no = c.challanNo 
          OR (a.lr_no != '' AND c.items LIKE CONCAT('%"cnNo":"', a.lr_no, '"%'))
-       ) 
-       WHERE c.brokerName = ?`, 
+       )
+       WHERE LOWER(TRIM(c.brokerName)) = LOWER(TRIM(?))`,
       [partyName]
     );
-    
-    for (const ar of arrivals) {
-      const lr = (ar.lr_no || "").trim();
-      if (lr) {
-        if (!lrMap.has(lr)) {
-          lrMap.set(lr, { date: ar.arrivalDate || ar.report_date || ar.created_at, refNo: ar.arrival_report_no || ar.arrival_report_id, billedAmount: 0, receivedAmount: 0, timestamp: ar.created_at || ar.arrivalDate || ar.report_date, sourceId: ar.arrival_report_id });
-        }
-        const hireAmt = Number(ar.lorryHire) || 0;
-        const advanceAmt = Number(ar.lessAdvance) || 0;
-        const haltingAmt = Number(ar.total_detention_amount) || 0;
-        const penaltyAmt = (ar.penalty_type && ar.penalty_type !== 'None') ? (Number(ar.penalty_amount) || 0) : 0;
-        const netPayable = hireAmt + haltingAmt - advanceAmt - penaltyAmt;
-        lrMap.get(lr).billedAmount += netPayable;
-      }
+
+    const arrivalMapByLr = new Map();
+    const arrivalMapByChallan = new Map();
+    for (const ar of arrivalRows) {
+      if (ar.lr_no) arrivalMapByLr.set(ar.lr_no.trim().toLowerCase(), ar);
+      if (ar.challan_no) arrivalMapByChallan.set(ar.challan_no.trim().toLowerCase(), ar);
     }
 
-    // 7. Collect Paid Amount from Vouchers (Code 2)
-    const [vouchers] = await pool.query("SELECT * FROM vouchers WHERE items LIKE '%\"codeNo\":\"2\"%'");
+    for (const c of challanRows) {
+      let cItems = [];
+      try { cItems = JSON.parse(c.items || "[]"); } catch(e){}
+      
+      const lrList = cItems.map(i => (i.cnNo || "").trim()).filter(Boolean);
+      const mainLr = lrList.length > 0 ? lrList.join(", ") : (c.challanNo || c.manualChallanNo || "").trim();
+      if (!mainLr) continue;
+
+      let netPayable = Number(c.balanceAmount) || (Number(c.lorryHire || c.freight || 0) + Number(c.extraCharges || 0) - Number(c.lessAdvance || 0) - Number(c.tds || 0) - Number(c.loadingMamul || 0) - Number(c.comlyCom || 0) - Number(c.rtoFine || 0));
+
+      let matchedAr = null;
+      for (const singleLr of lrList) {
+        if (arrivalMapByLr.has(singleLr.toLowerCase())) {
+          matchedAr = arrivalMapByLr.get(singleLr.toLowerCase());
+          break;
+        }
+      }
+      if (!matchedAr && c.challanNo && arrivalMapByChallan.has(c.challanNo.trim().toLowerCase())) {
+        matchedAr = arrivalMapByChallan.get(c.challanNo.trim().toLowerCase());
+      }
+      if (!matchedAr && c.manualChallanNo && arrivalMapByChallan.has(c.manualChallanNo.trim().toLowerCase())) {
+        matchedAr = arrivalMapByChallan.get(c.manualChallanNo.trim().toLowerCase());
+      }
+
+      if (matchedAr) {
+        const haltingAmt = Number(matchedAr.total_detention_amount) || 0;
+        const penaltyAmt = (matchedAr.penalty_type && matchedAr.penalty_type !== 'None') ? (Number(matchedAr.penalty_amount) || 0) : 0;
+        netPayable += haltingAmt - penaltyAmt;
+      }
+
+      const refNo = matchedAr ? (matchedAr.arrival_report_no || matchedAr.arrival_report_id || c.challanNo) : (c.challanNo || c.manualChallanNo);
+      const txDate = matchedAr ? (matchedAr.arrivalDate || matchedAr.report_date || c.challanDate) : c.challanDate;
+
+      lrMap.set(mainLr, {
+        date: txDate,
+        refNo: refNo,
+        lrList: lrList.length > 0 ? lrList : [mainLr],
+        billedAmount: Math.max(0, netPayable),
+        receivedAmount: 0,
+        timestamp: c.createdAt || txDate,
+        sourceId: c.id
+      });
+    }
+
+    // 7. Collect Paid Amount ONLY from Vouchers issued to this Vendor (paidTo = partyName)
+    const [vouchers] = await pool.query(
+      "SELECT * FROM vouchers WHERE LOWER(TRIM(paidTo)) = LOWER(TRIM(?))",
+      [partyName]
+    );
+
     for (const v of vouchers) {
       try {
         const items = JSON.parse(v.items || "[]");
         for (const item of items) {
-          if (String(item.codeNo) === "2") {
-             const refText = ((item.refNo || "") + " " + (item.description || "") + " " + (v.voucherNo || "") + " " + (v.manualVoucherNo || "") + " " + (v.narration || "")).toLowerCase();
-             let matchedLr = null;
-             for (const lr of lrMap.keys()) {
-               if (refText.includes(lr.toLowerCase())) {
-                 matchedLr = lr;
-                 break;
-               }
-             }
-             if (matchedLr) {
-               lrMap.get(matchedLr).receivedAmount += (Number(item.payment) || 0);
-             }
+          const itemAmt = Number(item.payment) || 0;
+          if (itemAmt <= 0) continue;
+
+          const refNo = (item.refNo || "").trim().toLowerCase();
+          const desc = (item.description || "").trim().toLowerCase();
+          const narr = (v.narration || "").trim().toLowerCase();
+
+          let matchedKey = null;
+
+          if (refNo) {
+            for (const [key, data] of lrMap.entries()) {
+              if (data.lrList.some(l => l.toLowerCase() === refNo || l.toLowerCase().replace(/[^a-z0-9]/g,'') === refNo.replace(/[^a-z0-9]/g,''))) {
+                matchedKey = key;
+                break;
+              }
+              if (key.toLowerCase() === refNo) {
+                matchedKey = key;
+                break;
+              }
+            }
+          }
+
+          if (!matchedKey) {
+            for (const [key, data] of lrMap.entries()) {
+              for (const singleLr of data.lrList) {
+                const cleanLr = singleLr.trim();
+                if (cleanLr.length >= 2) {
+                  const escapedLr = cleanLr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                  const regex = new RegExp(`(?:^|[^a-zA-Z0-9])${escapedLr}(?:$|[^a-zA-Z0-9])`, 'i');
+                  if (regex.test(desc) || regex.test(narr)) {
+                    matchedKey = key;
+                    break;
+                  }
+                }
+              }
+              if (matchedKey) break;
+            }
+          }
+
+          if (matchedKey) {
+            lrMap.get(matchedKey).receivedAmount += itemAmt;
+          } else {
+            ledger.push({
+              date: v.voucherDate,
+              refType: "Payment Voucher",
+              refNo: v.voucherNo || v.manualVoucherNo || "-",
+              lrNo: item.refNo || "-",
+              description: item.expenseAccountName ? `${item.expenseAccountName}: ${item.description || v.narration || ""}` : (v.narration || "Vendor Payment"),
+              debit: 0,
+              credit: itemAmt,
+              runningBalance: itemAmt,
+              runningBalanceType: "Dr",
+              status: "Received",
+              timestamp: v.createdAt || v.voucherDate,
+              sourceId: v.id,
+              profitLoss: 0
+            });
           }
         }
-      } catch (e) {}
+      } catch(e) {}
     }
   }
 
   // 8. Push LR Map records to ledger
   for (const [lrNo, data] of lrMap.entries()) {
-    const rawBalance = data.billedAmount - data.receivedAmount;
-    const balance = Math.max(0, rawBalance);
-    let status = "Not Received";
-
-    if (partyType === "Company") {
-      if (data.billedAmount <= 0.01 && data.receivedAmount <= 0.01) {
-        status = "Not Received";
-      } else if (rawBalance <= 0.01) {
-        status = "Received";
-      } else if (data.receivedAmount > 0.01) {
-        status = "Pending";
-      } else {
-        status = "Not Received";
-      }
-    } else {
-      // For Lorry Vendor / Broker: "Paid" / "Not Paid" / "Pending"
-      if (data.billedAmount <= 0.01 && data.receivedAmount <= 0.01) {
-        status = "Not Paid";
-      } else if (rawBalance <= 0.01) {
-        status = "Paid";
-      } else if (data.receivedAmount > 0.01) {
-        status = "Pending";
-      } else {
-        status = "Not Paid";
-      }
-    }
-
-    const description = partyType === "Company"
-      ? `Total: ${data.billedAmount.toFixed(2)} | Received: ${data.receivedAmount.toFixed(2)}`
-      : `Total: ${data.billedAmount.toFixed(2)} | Paid: ${data.receivedAmount.toFixed(2)}`;
-
+    const balance = data.billedAmount - data.receivedAmount;
+    const isSettled = balance <= 0.01;
     ledger.push({
        date: data.date,
        refType: partyType === "Company" ? "Bill Generated" : "Arrival Report",
        refNo: data.refNo,
        lrNo: lrNo,
-       description: description,
+       description: `Total: ${data.billedAmount.toFixed(2)} | Received: ${data.receivedAmount.toFixed(2)}`,
        debit: partyType === "Company" ? data.billedAmount : 0,
        credit: partyType === "Company" ? 0 : data.billedAmount,
-       runningBalance: balance,
-       runningBalanceType: balance > 0.01 ? (partyType === "Company" ? "Dr" : "Cr") : "",
-       status: status,
+       runningBalance: Math.abs(balance),
+       runningBalanceType: balance > 0 ? (partyType === "Company" ? "Dr" : "Cr") : "",
+       status: isSettled ? "Received" : "Not Received",
        timestamp: data.timestamp,
        sourceId: data.sourceId,
-       profitLoss: partyType === "Company" ? (data.lorryCost > 0 ? (data.billedAmount - data.lorryCost) : data.billedAmount) : 0
+       profitLoss: partyType === "Company" ? data.billedAmount : 0
     });
   }
 
@@ -348,25 +383,3 @@ export async function rebuildVendorLedgersFromVoucherText(text = "") {
     console.error("rebuildVendorLedgersFromVoucherText error:", e);
   }
 }
-
-export async function rebuildAllLedgers() {
-  const { getPool } = await import("./db.js");
-  const pool = getPool();
-  try {
-    const [companies] = await pool.query("SELECT id, consigneeName FROM companies WHERE active = 1");
-    for (const c of companies) {
-      if (c.consigneeName || c.id) {
-        await rebuildPartyLedger(c.id, "Company", c.consigneeName);
-      }
-    }
-    const [brokers] = await pool.query("SELECT id, brokerName FROM brokers WHERE active = 1");
-    for (const b of brokers) {
-      if (b.brokerName || b.id) {
-        await rebuildPartyLedger(b.id, "Broker", b.brokerName);
-      }
-    }
-  } catch(e) {
-    console.error("rebuildAllLedgers error:", e);
-  }
-}
-

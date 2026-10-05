@@ -108,6 +108,7 @@ function MoneyReceiptEntry() {
     bookings,
     consignmentNotes,
     bills,
+    challans,
     addMoneyReceipt,
     updateMoneyReceipt,
     nextMoneyReceiptNo,
@@ -193,7 +194,7 @@ function MoneyReceiptEntry() {
             const rAmt = item.receivedAmount || "";
             const tAmt = item.tdsAmount || "0.00";
             const cAmt = (item as any).claimAmount || "";
-            const nAmt = item.netAmount || (Math.max(0, (parseFloat(rAmt) || 0) - (parseFloat(tAmt) || 0) + (parseFloat(cAmt) || 0))).toFixed(2);
+            const nAmt = item.netAmount || (Math.max(0, (parseFloat(rAmt) || 0) - (parseFloat(tAmt) || 0) - (parseFloat(cAmt) || 0))).toFixed(2);
             return {
               ...item,
               billAmount: item.billAmount || "0.00",
@@ -227,14 +228,19 @@ function MoneyReceiptEntry() {
   // Normalization helper for accurate matching
   const normLr = (s: string | undefined | null) => {
     if (!s) return "";
-    return s.trim().toLowerCase().replace(/^lr[-_\s]?/i, "");
+    const clean = s.trim().toLowerCase().replace(/^lr[-_\s]?/i, "");
+    const stripped = clean.replace(/^0+/, "");
+    return stripped || clean;
   };
 
   const matchLrExact = (a: string | undefined | null, b: string) => {
     if (!a || !b) return false;
+    const cleanA = String(a).trim().toLowerCase();
+    const cleanB = String(b).trim().toLowerCase();
+    if (cleanA === cleanB) return true;
     const na = normLr(a);
     const nb = normLr(b);
-    return na === nb || na.padStart(3, "0") === nb.padStart(3, "0");
+    return na === nb || na.padStart(3, "0") === nb.padStart(3, "0") || cleanA.replace(/[^0-9]/g, "") === cleanB.replace(/[^0-9]/g, "");
   };
 
   // Fetch details ONLY when explicitly triggered (Enter key or Blur)
@@ -249,15 +255,61 @@ function MoneyReceiptEntry() {
     const row = { ...newItems[idx] };
 
     const cleanVal = val.toLowerCase().trim();
-    const matchBillNo = (a: string | undefined | null) => (a || "").toLowerCase().trim() === cleanVal;
+    const matchBillNo = (a: string | undefined | null) => {
+      if (!a) return false;
+      const cleanA = (a || "").toLowerCase().trim();
+      return cleanA === cleanVal || cleanA.replace(/[^0-9]/g, "") === cleanVal.replace(/[^0-9]/g, "");
+    };
+
+    const findLinkedBill = (queryVal: string) => {
+      if (!queryVal) return null;
+      return bills?.find((x) =>
+        matchBillNo(x.billNo) ||
+        matchLrExact(x.lrNumber, queryVal) ||
+        (Array.isArray(x.items) && x.items.some((i: any) =>
+          matchLrExact(i.lrNo, queryVal) ||
+          matchLrExact(i.cnNo, queryVal) ||
+          matchLrExact(i.bookingNo, queryVal) ||
+          matchBillNo(i.billNo)
+        ))
+      );
+    };
+
+    // Helper to extract freight amount from matching booking/challan/CN
+    const findFreightFromOtherSources = (lrQuery: string) => {
+      let amt = 0;
+      const cn = consignmentNotes?.find((x) => matchLrExact(x.lrNumber, lrQuery) || matchLrExact(x.consignmentNoteNo, lrQuery));
+      if (cn) {
+        if (Array.isArray(cn.items) && cn.items.length > 0) {
+          amt = cn.items.reduce((s: number, it: any) => s + (parseFloat(it.freightAmount || it.bookingAmount || it.amount || it.rate || it.totalFreight || it.total || 0) || 0), 0);
+        }
+        if (!amt) amt = parseFloat((cn as any).freightAmount || (cn as any).bookingAmount || (cn as any).totalAmount || 0) || 0;
+      }
+      if (!amt) {
+        const bk = bookings?.find((x) => matchLrExact(x.lrNo, lrQuery) || matchLrExact(x.lrNumber, lrQuery) || matchLrExact(x.bookingNo, lrQuery));
+        if (bk) {
+          amt = parseFloat(bk.billAmount?.toString() || bk.hireAmount?.toString() || "0") || 0;
+        }
+      }
+      if (!amt) {
+        const ch = challans?.find((x) => matchLrExact(x.challanNo, lrQuery) || matchLrExact(x.manualChallanNo, lrQuery) || x.items?.some((i: any) => matchLrExact(i.cnNo, lrQuery) || matchLrExact(i.lrNo, lrQuery)));
+        if (ch) {
+          amt = parseFloat((ch as any).totalFreight?.toString() || (ch as any).hireAmount?.toString() || "0") || 0;
+          if (!amt && (ch.lessAdvance || ch.balanceAmount)) {
+            amt = (parseFloat(ch.lessAdvance?.toString() || "0") || 0) + (parseFloat(ch.balanceAmount?.toString() || "0") || 0);
+          }
+        }
+      }
+      return amt;
+    };
 
     // 1. Try finding in Bills (highest priority)
     const bill = field === "billNo"
       ? bills?.find((x) => matchBillNo(x.billNo))
-      : bills?.find((x) => matchLrExact(x.lrNumber, val) || x.items?.some((i: any) => matchLrExact(i.lrNo, val)));
+      : findLinkedBill(val);
 
     if (bill) {
-      if (field === "lrNo") row.billNo = bill.billNo || "";
+      if (field === "lrNo" || !row.billNo) row.billNo = bill.billNo || "";
       if (field === "billNo" && (!row.lrNo || row.lrNo === "")) {
         row.lrNo = bill.lrNumber || (bill.items?.[0]?.lrNo) || "";
       }
@@ -268,16 +320,23 @@ function MoneyReceiptEntry() {
       }
 
       let grandTotal = 0;
-      if (bill.grandTotalOverride) {
+      if (bill.grandTotalOverride && parseFloat(bill.grandTotalOverride) > 0) {
         grandTotal = parseFloat(bill.grandTotalOverride);
       } else {
-        const subTotal = bill.subTotalOverride
+        const subTotal = bill.subTotalOverride && parseFloat(bill.subTotalOverride) > 0
           ? parseFloat(bill.subTotalOverride)
-          : (bill.items || []).reduce((sum: any, r: any) => sum + (parseFloat(r.amount) || 0), 0);
+          : (bill.items || []).reduce((sum: any, r: any) => sum + (parseFloat(r.amount) || parseFloat(r.rate) || parseFloat(r.freight) || 0), 0);
         const gstPct = parseFloat((bill.gstPercentage || "0%").replace(/[^0-9.]/g, "")) || 0;
         const gst = bill.gstOverride ? parseFloat(bill.gstOverride) : subTotal * (gstPct / 100);
         grandTotal = subTotal + gst;
       }
+      if (!grandTotal || grandTotal === 0) {
+        grandTotal = parseFloat((bill as any).totalAmount || (bill as any).billAmount || 0) || 0;
+      }
+      if (!grandTotal || grandTotal === 0) {
+        grandTotal = findFreightFromOtherSources(bill.lrNumber || val);
+      }
+
       const bAmt = grandTotal || 0;
       let bDate = bill.date || "";
       if (bDate.length > 10) bDate = bDate.substring(0, 10);
@@ -286,12 +345,12 @@ function MoneyReceiptEntry() {
         bDate = bDate.split("-").reverse().join("-");
       }
       row.billDate = bDate;
-      row.billAmount = bAmt.toFixed(2);
-      row.receivedAmount = ""; // Left empty for manual typing
+      row.billAmount = bAmt > 0 ? bAmt.toFixed(2) : "0.00";
+      row.receivedAmount = bAmt > 0 ? bAmt.toFixed(2) : "";
       row.tdsPercentage = row.tdsPercentage || "0";
       row.tdsAmount = "0.00";
       row.claimAmount = row.claimAmount || "";
-      row.netAmount = "0.00";
+      row.netAmount = bAmt > 0 ? bAmt.toFixed(2) : "0.00";
 
       newItems[idx] = row;
       setItems(newItems);
@@ -299,7 +358,7 @@ function MoneyReceiptEntry() {
       return;
     }
 
-    // 3. Try finding in Bookings
+    // 2. Try finding in Bookings
     const b = field === "billNo"
       ? bookings?.find((x) => matchBillNo(x.bookingNo) || matchBillNo(x.lrNo))
       : bookings?.find((x) => matchLrExact(x.lrNo, val) || matchLrExact(x.bookingNo, val));
@@ -312,15 +371,24 @@ function MoneyReceiptEntry() {
         setPaymentFor("Freight Bill");
       }
       const bAmtStr = b.billAmount ? b.billAmount.toString() : b.hireAmount ? b.hireAmount.toString() : "0";
-      const bAmt = parseFloat(bAmtStr) || 0;
+      let bAmt = parseFloat(bAmtStr) || 0;
+      if (!bAmt && (b.advanceAmount || b.balanceAmount)) {
+        bAmt = (parseFloat(b.advanceAmount?.toString() || "0") || 0) + (parseFloat(b.balanceAmount?.toString() || "0") || 0);
+      }
+
+      // Check linked bill for this booking
+      const linked = findLinkedBill(val) || findLinkedBill(b.lrNo) || findLinkedBill(b.bookingNo);
+      if (linked?.billNo) {
+        row.billNo = linked.billNo;
+      }
 
       row.billDate = b.bookingDate ? b.bookingDate.substring(0, 10) : "";
-      row.billAmount = bAmt.toFixed(2);
-      row.receivedAmount = ""; // Left empty for manual typing
+      row.billAmount = bAmt > 0 ? bAmt.toFixed(2) : "0.00";
+      row.receivedAmount = bAmt > 0 ? bAmt.toFixed(2) : "";
       row.tdsPercentage = row.tdsPercentage || "0";
       row.tdsAmount = "0.00";
       row.claimAmount = row.claimAmount || "";
-      row.netAmount = "0.00";
+      row.netAmount = bAmt > 0 ? bAmt.toFixed(2) : "0.00";
 
       newItems[idx] = row;
       setItems(newItems);
@@ -328,7 +396,7 @@ function MoneyReceiptEntry() {
       return;
     }
 
-    // 4. Try finding in Consignment Notes
+    // 3. Try finding in Consignment Notes
     const cn = field === "billNo"
       ? consignmentNotes?.find((x) => matchBillNo(x.consignmentNoteNo) || matchBillNo(x.lrNumber))
       : consignmentNotes?.find((x) => matchLrExact(x.lrNumber, val) || matchLrExact(x.consignmentNoteNo, val));
@@ -340,16 +408,30 @@ function MoneyReceiptEntry() {
       }
       let bAmt = 0;
       if (cn.items && cn.items.length > 0) {
-        bAmt = parseFloat(cn.items[0].invoiceValue?.toString() || "0") || 0;
+        bAmt = cn.items.reduce((s: number, it: any) => s + (parseFloat(it.freightAmount || it.bookingAmount || it.amount || it.rate || it.totalFreight || it.total || 0) || 0), 0);
+      }
+      if (!bAmt) {
+        bAmt = parseFloat((cn as any).freightAmount || (cn as any).bookingAmount || (cn as any).totalAmount || 0) || 0;
+      }
+      if (!bAmt) {
+        bAmt = findFreightFromOtherSources(cn.lrNumber || val);
+      }
+
+      // Check linked bill for this consignment note
+      const linked = findLinkedBill(val) || findLinkedBill(cn.lrNumber) || findLinkedBill(cn.consignmentNoteNo);
+      if (linked?.billNo) {
+        row.billNo = linked.billNo;
+      } else if (cn.items?.[0]?.invoiceNoDcNo) {
+        row.billNo = cn.items[0].invoiceNoDcNo;
       }
 
       row.billDate = cn.lrDate ? cn.lrDate.substring(0, 10) : "";
-      row.billAmount = bAmt.toFixed(2);
-      row.receivedAmount = ""; // Left empty for manual typing
+      row.billAmount = bAmt > 0 ? bAmt.toFixed(2) : "0.00";
+      row.receivedAmount = bAmt > 0 ? bAmt.toFixed(2) : "";
       row.tdsPercentage = row.tdsPercentage || "0";
       row.tdsAmount = "0.00";
       row.claimAmount = row.claimAmount || "";
-      row.netAmount = "0.00";
+      row.netAmount = bAmt > 0 ? bAmt.toFixed(2) : "0.00";
 
       newItems[idx] = row;
       setItems(newItems);
