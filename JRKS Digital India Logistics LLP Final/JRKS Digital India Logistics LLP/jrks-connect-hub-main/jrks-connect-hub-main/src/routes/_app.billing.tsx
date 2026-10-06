@@ -1695,8 +1695,7 @@ function BillingPage() {
                         </th>
                         <th
                           style={{ borderRight: "1.5px solid #000000" }}
-                          className="py-1 px-0.5 w-[8%] whitespace-normal break-words"
-                        >
+                          className="py-1 px-0.5 w-[7.5%] whitespace-normal break-words">
                           Date
                         </th>
                         <th
@@ -1707,26 +1706,22 @@ function BillingPage() {
                         </th>
                         <th
                           style={{ borderRight: "1.5px solid #000000" }}
-                          className="py-1 px-1 w-[14%] text-left whitespace-normal break-words"
-                        >
+                          className="py-1 px-1 w-[12%] text-left whitespace-normal break-words">
                           Goods
                         </th>
                         <th
                           style={{ borderRight: "1.5px solid #000000" }}
-                          className="py-1 px-0.5 w-[11.5%] whitespace-normal break-words"
-                        >
+                          className="py-1 px-0.5 w-[8.5%] whitespace-normal break-words">
                           Party Inv. No.
                         </th>
                         <th
                           style={{ borderRight: "1.5px solid #000000" }}
-                          className="py-1 px-0.5 w-[7.5%] whitespace-normal break-words"
-                        >
+                          className="py-1 px-0.5 w-[6.5%] whitespace-normal break-words">
                           Arv.Date
                         </th>
                         <th
                           style={{ borderRight: "1.5px solid #000000" }}
-                          className="py-1 px-0.5 w-[7.5%] whitespace-normal break-words"
-                        >
+                          className="py-1 px-0.5 w-[6.5%] whitespace-normal break-words">
                           Unld.Date
                         </th>
                         <th
@@ -1737,29 +1732,25 @@ function BillingPage() {
                         </th>
                         <th
                           style={{ borderRight: "1.5px solid #000000" }}
-                          className="py-1 px-0.5 w-[8.5%] whitespace-normal break-words"
-                        >
+                          className="py-1 px-0.5 w-[7%] whitespace-normal break-words">
                           Wgt MT/KG
                         </th>
                         <th
                           style={{ borderRight: "1.5px solid #000000" }}
-                          className="py-1 px-0.5 w-[8%] text-right whitespace-normal break-words"
-                        >
+                          className="py-1 px-0.5 w-[7%] text-right whitespace-normal break-words">
                           Rate
                         </th>
                         <th
                           style={{ borderRight: "1.5px solid #000000" }}
-                          className="py-1 px-0.5 w-[5.5%] text-right whitespace-normal break-words"
-                        >
+                          className="py-1 px-0.5 w-[9.5%] text-right whitespace-normal break-words">
                           Halting Amt
                         </th>
                         <th
                           style={{ borderRight: "1.5px solid #000000" }}
-                          className="py-1 px-0.5 w-[5.5%] text-right whitespace-normal break-words"
-                        >
+                          className="py-1 px-0.5 w-[7.5%] text-right whitespace-normal break-words">
                           RTO Fine
                         </th>
-                        <th className="py-1 px-1 w-[6.5%] text-right whitespace-normal break-words">
+                        <th className="py-1 px-1 w-[11%] text-right whitespace-normal break-words">
                           Amount
                         </th>
                       </tr>
