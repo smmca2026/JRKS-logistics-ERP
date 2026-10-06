@@ -276,20 +276,25 @@ export async function rebuildPartyLedger(partyId, partyType, providedPartyName =
   for (const [lrNo, data] of lrMap.entries()) {
     const balance = data.billedAmount - data.receivedAmount;
     const isSettled = balance <= 0.01;
+    const isCompany = partyType === "Company";
     ledger.push({
        date: data.date,
-       refType: partyType === "Company" ? "Bill Generated" : "Arrival Report",
+       refType: isCompany ? "Bill Generated" : "Arrival Report",
        refNo: data.refNo,
        lrNo: lrNo,
-       description: `Total: ${data.billedAmount.toFixed(2)} | Received: ${data.receivedAmount.toFixed(2)}`,
-       debit: partyType === "Company" ? data.billedAmount : 0,
-       credit: partyType === "Company" ? 0 : data.billedAmount,
+       description: isCompany
+         ? `Total: ${data.billedAmount.toFixed(2)} | Received: ${data.receivedAmount.toFixed(2)}`
+         : `Total: ${data.billedAmount.toFixed(2)} | Paid: ${data.receivedAmount.toFixed(2)}`,
+       debit: isCompany ? data.billedAmount : 0,
+       credit: isCompany ? 0 : data.billedAmount,
        runningBalance: Math.abs(balance),
-       runningBalanceType: balance > 0 ? (partyType === "Company" ? "Dr" : "Cr") : "",
-       status: isSettled ? "Received" : "Not Received",
+       runningBalanceType: balance > 0 ? (isCompany ? "Dr" : "Cr") : "",
+       status: isCompany 
+         ? (isSettled ? "Received" : "Not Received")
+         : (isSettled ? "Paid" : "Not Paid"),
        timestamp: data.timestamp,
        sourceId: data.sourceId,
-       profitLoss: partyType === "Company" ? data.billedAmount : 0
+       profitLoss: isCompany ? data.billedAmount : 0
     });
   }
 
