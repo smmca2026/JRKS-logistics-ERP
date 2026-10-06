@@ -24,16 +24,19 @@ export async function rebuildPartyLedger(partyId, partyType, providedPartyName =
       const [[comp]] = await pool.query("SELECT consigneeName FROM companies WHERE id = ?", [finalPartyId]);
       if (comp) partyName = comp.consigneeName;
     }
-  } else {
+    } else {
     if (!finalPartyId && partyName) {
       const [[brok]] = await pool.query("SELECT id, brokerName FROM brokers WHERE LOWER(TRIM(brokerName)) = LOWER(TRIM(?)) LIMIT 1", [partyName]);
       if (brok) {
         finalPartyId = brok.id;
         partyName = brok.brokerName;
+      } else {
+        finalPartyId = partyName;
       }
     } else if (finalPartyId && !partyName) {
       const [[brok]] = await pool.query("SELECT brokerName FROM brokers WHERE id = ?", [finalPartyId]);
       if (brok) partyName = brok.brokerName;
+      else partyName = finalPartyId;
     }
   }
 
@@ -137,60 +140,72 @@ export async function rebuildPartyLedger(partyId, partyType, providedPartyName =
     );
 
     const [arrivalRows] = await pool.query(
-      `SELECT a.* FROM arrival_reports a 
-       JOIN challans c ON (
-         a.challan_no = c.challanNo 
-         OR a.challan_no = c.manualChallanNo 
-         OR a.lr_no = c.challanNo 
-         OR (a.lr_no != '' AND c.items LIKE CONCAT('%"cnNo":"', a.lr_no, '"%'))
-       )
-       WHERE LOWER(TRIM(c.brokerName)) = LOWER(TRIM(?))`,
-      [partyName]
+      `SELECT a.* FROM arrival_reports a`
     );
 
-    const arrivalMapByLr = new Map();
-    const arrivalMapByChallan = new Map();
-    for (const ar of arrivalRows) {
-      if (ar.lr_no) arrivalMapByLr.set(ar.lr_no.trim().toLowerCase(), ar);
-      if (ar.challan_no) arrivalMapByChallan.set(ar.challan_no.trim().toLowerCase(), ar);
-    }
+    const cleanStr = (s) => (s || "").toString().trim().toLowerCase().replace(/[^a-z0-9]/g, "");
 
     for (const c of challanRows) {
       let cItems = [];
       try { cItems = JSON.parse(c.items || "[]"); } catch(e){}
       
-      const lrList = cItems.map(i => (i.cnNo || "").trim()).filter(Boolean);
+      const lrList = cItems.map(i => (i.cnNo || i.lrNo || i.bookingNo || "").trim()).filter(Boolean);
       const mainLr = lrList.length > 0 ? lrList.join(", ") : (c.challanNo || c.manualChallanNo || "").trim();
       if (!mainLr) continue;
 
-      let netPayable = Number(c.balanceAmount) || (Number(c.lorryHire || c.freight || 0) + Number(c.extraCharges || 0) - Number(c.lessAdvance || 0) - Number(c.tds || 0) - Number(c.loadingMamul || 0) - Number(c.comlyCom || 0) - Number(c.rtoFine || 0));
+      // Exact mathematical calculation for Challan Balance
+      const lorryHire = Number(c.lorryHire) || Number(c.freight) || 0;
+      const extraCharges = Number(c.extraCharges) || 0;
+      const lessAdvance = Number(c.lessAdvance) || 0;
+      const tds = Number(c.tds) || 0;
+      const loadingMamul = Number(c.loadingMamul) || 0;
+      const comlyCom = Number(c.comlyCom) || 0;
+      const rtoFine = Number(c.rtoFine) || 0;
+
+      const challanGross = lorryHire + extraCharges;
+      const challanDeductions = lessAdvance + tds + loadingMamul + comlyCom + rtoFine;
+      const challanBalance = challanGross - challanDeductions;
 
       let matchedAr = null;
-      for (const singleLr of lrList) {
-        if (arrivalMapByLr.has(singleLr.toLowerCase())) {
-          matchedAr = arrivalMapByLr.get(singleLr.toLowerCase());
+      for (const ar of arrivalRows) {
+        const arLrClean = cleanStr(ar.lr_no || ar.bill_no);
+        const arChClean = cleanStr(ar.challan_no);
+        const cNoClean = cleanStr(c.challanNo);
+        const mNoClean = cleanStr(c.manualChallanNo);
+
+        // Check if arrival report matches challan number
+        if (arChClean && (arChClean === cNoClean || arChClean === mNoClean)) {
+          matchedAr = ar;
           break;
         }
-      }
-      if (!matchedAr && c.challanNo && arrivalMapByChallan.has(c.challanNo.trim().toLowerCase())) {
-        matchedAr = arrivalMapByChallan.get(c.challanNo.trim().toLowerCase());
-      }
-      if (!matchedAr && c.manualChallanNo && arrivalMapByChallan.has(c.manualChallanNo.trim().toLowerCase())) {
-        matchedAr = arrivalMapByChallan.get(c.manualChallanNo.trim().toLowerCase());
+
+        // Check if arrival report matches any LR number in challan
+        if (arLrClean) {
+          const matchedByLr = lrList.some(l => {
+            const singleClean = cleanStr(l);
+            return singleClean && (singleClean === arLrClean || singleClean.replace(/^0+/, "") === arLrClean.replace(/^0+/, ""));
+          });
+          if (matchedByLr) {
+            matchedAr = ar;
+            break;
+          }
+        }
       }
 
+      let netPayable = challanBalance;
       if (matchedAr) {
         const haltingAmt = Number(matchedAr.total_detention_amount) || 0;
-        const penaltyAmt = (matchedAr.penalty_type && matchedAr.penalty_type !== 'None') ? (Number(matchedAr.penalty_amount) || 0) : 0;
-        netPayable += haltingAmt - penaltyAmt;
+        const penaltyAmt = (matchedAr.penalty_type && matchedAr.penalty_type !== 'None' && matchedAr.penalty_type !== '') ? (Number(matchedAr.penalty_amount) || 0) : 0;
+        netPayable = challanBalance + haltingAmt - penaltyAmt;
       }
 
-      const refNo = matchedAr ? (matchedAr.arrival_report_no || matchedAr.arrival_report_id || c.challanNo) : (c.challanNo || c.manualChallanNo);
-      const txDate = matchedAr ? (matchedAr.arrivalDate || matchedAr.report_date || c.challanDate) : c.challanDate;
+      const refNo = matchedAr ? (matchedAr.arrival_report_no || matchedAr.arrival_report_id || c.challanNo || c.manualChallanNo) : (c.challanNo || c.manualChallanNo || "-");
+      const txDate = matchedAr ? (matchedAr.arrival_date || matchedAr.arrivalDate || matchedAr.report_date || c.challanDate) : c.challanDate;
 
       lrMap.set(mainLr, {
         date: txDate,
         refNo: refNo,
+        refType: matchedAr ? "Arrival Report" : "Challan Generated",
         lrList: lrList.length > 0 ? lrList : [mainLr],
         billedAmount: Math.max(0, netPayable),
         receivedAmount: 0,

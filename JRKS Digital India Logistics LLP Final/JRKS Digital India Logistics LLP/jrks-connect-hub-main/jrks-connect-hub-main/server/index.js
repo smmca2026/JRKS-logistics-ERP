@@ -1022,8 +1022,8 @@ app.post("/api/challans", async (req, res) => {
         driverName, driverMobile, dimLength, dimWidth, dimHeight,
         brokerPan, brokerName, brokerAadhar, brokerAccount, brokerMobile,
         freight, loadingMamul, comlyCom, rtoFine, extraCharges, lorryHire, tds, tdsPercentage, lessAdvance, commission, balanceAmount, payableAt,
-        brokerNameSec5, status, createdAt, updatedAt, archived
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        brokerNameSec5, status, createdAt, updatedAt, archived, createdBy
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         body.manualChallanNo || "",
@@ -1188,6 +1188,13 @@ app.put("/api/challans/:id", async (req, res) => {
       ],
     );
 
+    if (body.brokerName) {
+      try { await rebuildPartyLedger(null, "Broker", body.brokerName); } catch(e){}
+    }
+    if (existingChallanRows && existingChallanRows[0] && existingChallanRows[0].brokerName && existingChallanRows[0].brokerName !== body.brokerName) {
+      try { await rebuildPartyLedger(null, "Broker", existingChallanRows[0].brokerName); } catch(e){}
+    }
+
     res.json({ id, ...body, updatedAt: date });
   } catch (err) {
     console.error("PUT /api/challans error:", err);
@@ -1205,7 +1212,7 @@ app.delete("/api/challans/:id", async (req, res) => {
     const pool = getPool();
     const { id } = req.params;
 
-    const [existingCheck] = await pool.query("SELECT items FROM challans WHERE id = ?", [id]);
+    const [existingCheck] = await pool.query("SELECT items, brokerName FROM challans WHERE id = ?", [id]);
     if (existingCheck.length > 0) {
       const itemsCheck = JSON.parse(existingCheck[0].items || "[]");
       if (itemsCheck.length > 0) {
@@ -1224,7 +1231,11 @@ app.delete("/api/challans/:id", async (req, res) => {
       }
     }
 
+    const brokerToRebuild = existingCheck[0]?.brokerName;
     await pool.query("DELETE FROM challans WHERE id = ?", [id]);
+    if (brokerToRebuild) {
+      try { await rebuildPartyLedger(null, "Broker", brokerToRebuild); } catch(e){}
+    }
     res.json({ success: true, message: "Challan deleted successfully." });
   } catch (err) {
     console.error("DELETE /api/challans error:", err);
@@ -1619,12 +1630,21 @@ app.post("/api/arrival-reports", async (req, res) => {
 
     try {
       const pool = getPool();
-      const [[challan]] = await pool.query(
-        "SELECT brokerName, items FROM challans WHERE challanNo = ? OR manualChallanNo = ?",
-        [body.challan_no || "", body.challan_no || ""]
+      const [matchingChallans] = await pool.query(
+        `SELECT brokerName, items FROM challans 
+         WHERE (challanNo != '' AND (challanNo = ? OR challanNo = ?))
+            OR (manualChallanNo != '' AND (manualChallanNo = ? OR manualChallanNo = ?))
+            OR (? != '' AND (items LIKE CONCAT('%"cnNo":"', ?, '"%') OR items LIKE CONCAT('%"lrNo":"', ?, '"%') OR items LIKE CONCAT('%"bookingNo":"', ?, '"%')))`,
+        [
+          body.challan_no || "", body.lr_no || "",
+          body.challan_no || "", body.lr_no || "",
+          body.lr_no || "", body.lr_no || "", body.lr_no || "", body.lr_no || ""
+        ]
       );
-      if (challan) {
-        await rebuildPartyLedger(null, "Broker", challan.brokerName);
+      for (const challan of matchingChallans) {
+        if (challan.brokerName) {
+          await rebuildPartyLedger(null, "Broker", challan.brokerName);
+        }
         try {
           const items = JSON.parse(challan.items || "[]");
           const lrNumbers = items.map(i => i.lrNo || i.bookingNo || i.cnNo).filter(Boolean);
@@ -1705,12 +1725,21 @@ app.put("/api/arrival-reports/:id", async (req, res) => {
 
     try {
       const pool = getPool();
-      const [[challan]] = await pool.query(
-        "SELECT brokerName, items FROM challans WHERE challanNo = ? OR manualChallanNo = ?",
-        [body.challan_no || "", body.challan_no || ""]
+      const [matchingChallans] = await pool.query(
+        `SELECT brokerName, items FROM challans 
+         WHERE (challanNo != '' AND (challanNo = ? OR challanNo = ?))
+            OR (manualChallanNo != '' AND (manualChallanNo = ? OR manualChallanNo = ?))
+            OR (? != '' AND (items LIKE CONCAT('%"cnNo":"', ?, '"%') OR items LIKE CONCAT('%"lrNo":"', ?, '"%') OR items LIKE CONCAT('%"bookingNo":"', ?, '"%')))`,
+        [
+          body.challan_no || "", body.lr_no || "",
+          body.challan_no || "", body.lr_no || "",
+          body.lr_no || "", body.lr_no || "", body.lr_no || "", body.lr_no || ""
+        ]
       );
-      if (challan) {
-        await rebuildPartyLedger(null, "Broker", challan.brokerName);
+      for (const challan of matchingChallans) {
+        if (challan.brokerName) {
+          await rebuildPartyLedger(null, "Broker", challan.brokerName);
+        }
         try {
           const items = JSON.parse(challan.items || "[]");
           const lrNumbers = items.map(i => i.lrNo || i.bookingNo || i.cnNo).filter(Boolean);
@@ -1731,7 +1760,29 @@ app.delete("/api/arrival-reports/:id", async (req, res) => {
   try {
     const pool = getPool();
     const { id } = req.params;
+    const [[existingAr]] = await pool.query("SELECT * FROM arrival_reports WHERE arrival_report_id = ?", [id]);
     await pool.query("DELETE FROM arrival_reports WHERE arrival_report_id = ?", [id]);
+    
+    if (existingAr) {
+      try {
+        const [matchingChallans] = await pool.query(
+          `SELECT brokerName FROM challans 
+           WHERE (challanNo != '' AND (challanNo = ? OR challanNo = ?))
+              OR (manualChallanNo != '' AND (manualChallanNo = ? OR manualChallanNo = ?))
+              OR (? != '' AND (items LIKE CONCAT('%"cnNo":"', ?, '"%') OR items LIKE CONCAT('%"lrNo":"', ?, '"%') OR items LIKE CONCAT('%"bookingNo":"', ?, '"%')))`,
+          [
+            existingAr.challan_no || "", existingAr.lr_no || "",
+            existingAr.challan_no || "", existingAr.lr_no || "",
+            existingAr.lr_no || "", existingAr.lr_no || "", existingAr.lr_no || "", existingAr.lr_no || ""
+          ]
+        );
+        for (const challan of matchingChallans) {
+          if (challan.brokerName) {
+            await rebuildPartyLedger(null, "Broker", challan.brokerName);
+          }
+        }
+      } catch(e){}
+    }
     res.json({ success: true, message: "Arrival report deleted successfully." });
   } catch (err) {
     console.error("DELETE /api/arrival-reports/:id error:", err);
