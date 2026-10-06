@@ -289,9 +289,9 @@ export async function rebuildPartyLedger(partyId, partyType, providedPartyName =
        credit: isCompany ? 0 : data.billedAmount,
        runningBalance: Math.abs(balance),
        runningBalanceType: balance > 0 ? (isCompany ? "Dr" : "Cr") : "",
-       status: isCompany 
-         ? (isSettled ? "Received" : "Not Received")
-         : (isSettled ? "Paid" : "Not Paid"),
+       status: isSettled 
+         ? (isCompany ? "Received" : "Paid")
+         : "Pending",
        timestamp: data.timestamp,
        sourceId: data.sourceId,
        profitLoss: isCompany ? data.billedAmount : 0

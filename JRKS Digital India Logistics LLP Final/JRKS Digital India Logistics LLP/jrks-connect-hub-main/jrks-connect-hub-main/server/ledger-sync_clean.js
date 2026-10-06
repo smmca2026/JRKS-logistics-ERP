@@ -482,7 +482,7 @@ export async function rebuildCompanyLedgersByLrNumbers(lrNumbers = []) {
        credit: partyType === "Company" ? 0 : data.billedAmount,
        runningBalance: Math.abs(balance),
        runningBalanceType: balance > 0 ? (partyType === "Company" ? "Dr" : "Cr") : "",
-       status: partyType === "Company" ? (isSettled ? "Received" : "Not Received") : (isSettled ? "Paid" : "Not Paid"),
+       status: isSettled ? (partyType === "Company" ? "Received" : "Paid") : "Pending",
        timestamp: data.timestamp,
        sourceId: data.sourceId,
        profitLoss: partyType === "Company" ? data.billedAmount : 0
